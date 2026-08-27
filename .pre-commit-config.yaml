@@ -1,0 +1,40 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check --fix
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+        stages: [pre-commit]
+
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types: [python]
+        stages: [pre-commit]
+
+      - id: mypy
+        name: mypy src
+        entry: uv run mypy src
+        language: system
+        pass_filenames: false
+        types: [python]
+        stages: [pre-commit]
+
+      - id: pytest-unit-cov
+        name: pytest unit (with coverage gate)
+        entry: uv run pytest tests/unit --cov=src/enphase_bridge_mcp --cov-fail-under=80 -q
+        language: system
+        pass_filenames: false
+        types: [python]
+        stages: [pre-commit]
+
+      - id: pytest-unit-prepush
+        name: pytest unit
+        entry: uv run pytest tests/unit -q
+        language: system
+        pass_filenames: false
+        types: [python]
+        stages: [pre-push]
