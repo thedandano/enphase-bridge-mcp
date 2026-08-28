@@ -103,12 +103,19 @@ async def mcp_client_session(app: Starlette) -> AsyncIterator[ClientSession]:
 # --- tools/list --------------------------------------------------------
 
 
-async def test_tools_list_shows_all_three_tools_with_structured_schemas() -> None:
+async def test_tools_list_shows_all_six_tools_with_structured_schemas() -> None:
     async with mcp_app() as app, mcp_client_session(app) as session:
         result = await session.list_tools()
 
     names = {tool.name for tool in result.tools}
-    assert names == {"get_current_status", "get_daily_summary", "compare_days"}
+    assert names == {
+        "get_current_status",
+        "get_daily_summary",
+        "compare_days",
+        "get_period_summary",
+        "compare_periods",
+        "get_inverter_health",
+    }
 
     with_schema = {tool.name for tool in result.tools if tool.output_schema is not None}
     assert with_schema == names, "every tool should have a structured output schema"
@@ -149,6 +156,51 @@ async def test_tools_call_get_daily_summary_returns_correct_numbers() -> None:
     # 3 complete windows out of 96 expected for a full past day, not out of
     # the 4 the bridge happened to return.
     assert result.structured_content["data_completeness_pct"] == 3.12
+
+
+@respx.mock
+async def test_tools_call_get_inverter_health_returns_correct_data() -> None:
+    respx.get(f"{BRIDGE_URL}/api/inverters/arrays").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "window_start": 1745712000,
+                "arrays": [
+                    {
+                        "name": "east",
+                        "total_watts": 425.0,
+                        "online_count": 1,
+                        "total_count": 2,
+                        "inverters": [
+                            {
+                                "serial_number": "121847012345",
+                                "watts_output": 425.0,
+                                "is_online": True,
+                                "last_report_date": 1745712000,
+                            },
+                            {
+                                "serial_number": "121847012346",
+                                "watts_output": 0.0,
+                                "is_online": False,
+                                "last_report_date": 0,
+                            },
+                        ],
+                    }
+                ],
+            },
+        )
+    )
+
+    async with mcp_app() as app, mcp_client_session(app) as session:
+        result = await session.call_tool("get_inverter_health", {})
+
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["arrays"][0]["name"] == "east"
+    assert result.structured_content["arrays"][0]["online_count"] == 1
+    assert result.structured_content["arrays"][0]["total_count"] == 2
+    assert len(result.structured_content["attention_needed"]) == 1
+    assert result.structured_content["attention_needed"][0]["serial"] == "121847012346"
 
 
 # --- tools/call error path --------------------------------------------------------

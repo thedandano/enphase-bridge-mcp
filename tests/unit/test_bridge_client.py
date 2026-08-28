@@ -90,6 +90,103 @@ async def test_list_windows_single_page() -> None:
 
 
 @respx.mock
+async def test_get_inverter_arrays_happy_path() -> None:
+    respx.get(f"{BRIDGE_URL}/api/inverters/arrays").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "window_start": 1745712000,
+                "arrays": [
+                    {
+                        "name": "east",
+                        "total_watts": 850.0,
+                        "online_count": 2,
+                        "total_count": 2,
+                        "inverters": [
+                            {
+                                "serial_number": "121847012345",
+                                "watts_output": 425.0,
+                                "is_online": True,
+                                "last_report_date": 1745712000,
+                            },
+                            {
+                                "serial_number": "121847012346",
+                                "watts_output": 425.0,
+                                "is_online": True,
+                                "last_report_date": 1745712000,
+                            },
+                        ],
+                    },
+                    {
+                        "name": "west",
+                        "total_watts": 0.0,
+                        "online_count": 0,
+                        "total_count": 1,
+                        "inverters": [
+                            {
+                                "serial_number": "121847012347",
+                                "watts_output": 0.0,
+                                "is_online": False,
+                                "last_report_date": 0,
+                            }
+                        ],
+                    },
+                ],
+            },
+        )
+    )
+    result = await make_client().get_inverter_arrays()
+    assert result["window_start"] == 1745712000
+    assert len(result["arrays"]) == 2
+    assert result["arrays"][0]["name"] == "east"
+    assert result["arrays"][0]["inverters"][0]["serial_number"] == "121847012345"
+    assert result["arrays"][1]["inverters"][0]["is_online"] is False
+
+
+@respx.mock
+async def test_get_inverter_arrays_no_stored_data() -> None:
+    """No windows recorded yet: bridge returns window_start=None and an empty arrays list."""
+    respx.get(f"{BRIDGE_URL}/api/inverters/arrays").mock(
+        return_value=httpx.Response(200, json={"window_start": None, "arrays": []})
+    )
+    result = await make_client().get_inverter_arrays()
+    assert result["window_start"] is None
+    assert result["arrays"] == []
+
+
+@respx.mock
+async def test_get_inverter_arrays_connect_error_raises_tool_error_with_url() -> None:
+    respx.get(f"{BRIDGE_URL}/api/inverters/arrays").mock(side_effect=httpx.ConnectError("refused"))
+    with pytest.raises(ToolError) as exc_info:
+        await make_client().get_inverter_arrays()
+    assert BRIDGE_URL in str(exc_info.value)
+    assert "running?" in str(exc_info.value)
+
+
+@respx.mock
+async def test_get_inverter_arrays_500_raises_tool_error_with_message() -> None:
+    respx.get(f"{BRIDGE_URL}/api/inverters/arrays").mock(
+        return_value=httpx.Response(500, json={"error": "internal_error", "message": "db down"})
+    )
+    with pytest.raises(ToolError) as exc_info:
+        await make_client().get_inverter_arrays()
+    assert "500" in str(exc_info.value)
+    assert "db down" in str(exc_info.value)
+
+
+@respx.mock
+async def test_get_inverter_arrays_malformed_json_raises_explicit_tool_error() -> None:
+    respx.get(f"{BRIDGE_URL}/api/inverters/arrays").mock(
+        return_value=httpx.Response(
+            200, content=b"{not valid json", headers={"content-type": "application/json"}
+        )
+    )
+    with pytest.raises(ToolError) as exc_info:
+        await make_client().get_inverter_arrays()
+    assert "malformed" in str(exc_info.value).lower()
+
+
+@respx.mock
 async def test_get_power_samples_happy_path() -> None:
     respx.get(f"{BRIDGE_URL}/api/power/samples").mock(
         return_value=httpx.Response(
