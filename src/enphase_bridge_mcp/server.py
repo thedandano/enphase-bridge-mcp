@@ -7,8 +7,11 @@ per-call-connection design. No shared mutable state between calls.
 
 from __future__ import annotations
 
+import argparse
+import os
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlparse
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -275,8 +278,36 @@ def _transport_security(settings: Settings) -> TransportSecuritySettings | None:
     )
 
 
-def main() -> None:
+def _apply_bridge_flags(settings: Settings, ip: str | None, port: int | None) -> None:
+    """Overlay --ip/--port onto the configured bridge URL (flags beat env/.env)."""
+    if ip is None and port is None:
+        return
+    current = urlparse(settings.bridge_url)
+    host = ip or current.hostname or "localhost"
+    effective_port = port or current.port or 8080
+    settings.bridge_url = f"http://{host}:{effective_port}"
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(prog="enphase-bridge-mcp")
+    parser.add_argument(
+        "--ip",
+        help="IP/hostname of the enphase-bridge service "
+        "(default: ENPHASE_MCP_BRIDGE_URL or localhost)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        help="port of the enphase-bridge service (default: from ENPHASE_MCP_BRIDGE_URL or 8080)",
+    )
+    args = parser.parse_args(argv)
+
     settings = Settings()
+    if args.ip is not None or args.port is not None:
+        _apply_bridge_flags(settings, args.ip, args.port)
+        # Tools construct a fresh Settings() per call (stateless design), so the
+        # flag override must travel via the environment to reach them.
+        os.environ["ENPHASE_MCP_BRIDGE_URL"] = settings.bridge_url
     server.run(
         transport="streamable-http",
         stateless_http=True,
