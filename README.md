@@ -1,15 +1,73 @@
 # enphase-bridge-mcp
 
-An MCP (Model Context Protocol) server that exposes the local [enphase-bridge](https://github.com/thedandano/enphase-bridge)
-Rust service — solar production/consumption energy windows and power samples — as tools an LLM can call.
+An MCP (Model Context Protocol) server that lets an AI assistant answer questions about your home
+solar system — current production, history, comparisons, inverter health, and true-up cost
+estimates — by wrapping the local [enphase-bridge](https://github.com/thedandano/enphase-bridge)
+Rust service.
 
-## Run
+Fully **stateless** streamable-HTTP transport (MCP spec 2026-07-28): no sessions, no server-side
+state, every tool call self-contained.
+
+**8 tools:** `get_current_status`, `get_daily_summary`, `compare_days`, `get_period_summary`,
+`compare_periods`, `get_inverter_health`, `get_trueup_estimate`, `refresh_tou_schedule`.
+
+## Prerequisites
+
+1. [enphase-bridge](https://github.com/thedandano/enphase-bridge) running (default `http://localhost:8080`).
+2. [uv](https://docs.astral.sh/uv/) installed.
+3. Start this server:
 
 ```sh
 uv run enphase-bridge-mcp
 ```
 
-Serves streamable-HTTP MCP at `http://127.0.0.1:8000/mcp` by default.
+Serves streamable-HTTP MCP at `http://127.0.0.1:8000/mcp` by default. The server must be running
+for tool calls to succeed — installs below work either way; calls fail with a clear error until
+it's up.
+
+## Install — Claude Code
+
+Via the plugin marketplace (this repo is its own marketplace):
+
+```
+/plugin marketplace add thedandano/enphase-bridge-mcp
+/plugin install enphase-bridge@enphase-plugins
+```
+
+CLI equivalents: `claude plugin marketplace add thedandano/enphase-bridge-mcp` and
+`claude plugin install enphase-bridge@enphase-plugins`.
+
+Manual alternative (no plugin, just the MCP server):
+
+```sh
+claude mcp add --transport http enphase http://127.0.0.1:8000/mcp
+```
+
+## Install — Codex
+
+Codex consumes the same marketplace format:
+
+```sh
+codex plugin marketplace add thedandano/enphase-bridge-mcp
+codex plugin add enphase-bridge@enphase-plugins
+```
+
+Manual alternative — add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.enphase]
+url = "http://127.0.0.1:8000/mcp"
+```
+
+> **Note:** while this repo is private, marketplace installs require GitHub access to it (SSH/HTTPS
+> auth). Make the repo public before advertising the install commands.
+
+## Try it
+
+- "How's my solar doing today vs yesterday?"
+- "What did I produce last week compared to the week before?"
+- "Are any of my inverters having problems?"
+- "What would my true-up bill look like for the last year?"
 
 ## Configuration
 
@@ -30,10 +88,6 @@ The MCP SDK auto-restricts incoming requests to loopback `Host`/`Origin` headers
 another non-loopback address) to serve LAN clients, also set `ENPHASE_MCP_ALLOWED_HOSTS` to the exact
 `Host` header value(s) those clients will send — there is no wildcard fallback, only the hosts you list
 are accepted.
-
-## Endpoint
-
-- `http://127.0.0.1:8000/mcp` — streamable-HTTP MCP endpoint.
 
 ## Warning
 
