@@ -48,6 +48,10 @@ class BridgeClient:
             raise ToolError(self._describe_error(response))
 
         try:
+            # A 2xx status only means the bridge accepted the request — the body
+            # can still be invalid JSON (a proxy in front of it, a truncated
+            # response, a bridge bug), so this parse is a trust-boundary guard,
+            # not a redundant check.
             return response.json()
         except ValueError as exc:
             raise ToolError(
