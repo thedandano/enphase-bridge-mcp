@@ -14,11 +14,11 @@ from typing import Any
 
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import ToolAnnotations
-from pydantic import BaseModel
 
 from .analysis_tools import _parse_period_date
 from .bridge_client import BridgeClient
 from .formatting import epoch_to_pacific_iso, pacific_day_bounds
+from .models import TouPeriodBreakdown, ToUSchedule, ToUScheduleMeta, TrueUpEstimate
 from .server import _build_client, server
 
 _BRIDGE_TRUEUP_END_QUIRK_SECONDS = 24 * 60 * 60
@@ -46,66 +46,6 @@ tail of the period from `net_cost_usd` with no error and no signal (even
 `excluded_window_count` stays 0, since both the current-formula and
 all-formula queries hit the same cap). Capped here with margin below the
 bridge's actual limit."""
-
-
-class TouPeriodBreakdown(BaseModel):
-    """Import/export energy and cost/credit for one TOU period within an estimate."""
-
-    import_kwh: float
-    export_kwh: float
-    import_cost_usd: float
-    export_credit_usd: float
-
-
-class ToUScheduleMeta(BaseModel):
-    """Identifies which rate schedule a `TrueUpEstimate` was computed against."""
-
-    id: int
-    rate_label: str
-    effective_date: str | None
-    """The schedule's effective date as reported by OpenEI (YYYY-MM-DD), or None
-    if OpenEI didn't report one for this rate."""
-
-
-class TrueUpEstimate(BaseModel):
-    """Estimated true-up cost for a range of Pacific civil days, by TOU period."""
-
-    start_date: str
-    end_date: str
-    net_cost_usd: float
-    """Net true-up cost in USD for the period: total import cost minus total
-    export credit, summed across all TOU periods. NEGATIVE means the utility
-    owes *you* a credit (export credits exceeded import costs) — a negative
-    value is a good outcome, not an error."""
-    peak: TouPeriodBreakdown
-    off_peak: TouPeriodBreakdown
-    super_off_peak: TouPeriodBreakdown
-    tou_schedule: ToUScheduleMeta
-    """The rate schedule this estimate was computed against. If it looks stale,
-    call `refresh_tou_schedule` and re-request the estimate."""
-    computed_at: str
-    """Pacific ISO 8601 timestamp the bridge computed this estimate at (now, not
-    a bound of the period)."""
-    excluded_window_count: int
-    """Number of energy windows inside the requested period that were excluded
-    from this estimate because they are still on an older (or unversioned)
-    formula version and have not yet been recomputed onto the one currently
-    active. Nonzero means this estimate is based on incomplete/stale data for
-    the period even though a result was returned — surfaced here rather than
-    hidden."""
-
-
-class ToUSchedule(BaseModel):
-    """A freshly fetched Time-of-Use rate schedule, now the bridge's active one."""
-
-    schedule_id: int
-    rate_label: str
-    utility_name: str
-    effective_date: str | None
-    """The schedule's effective date as reported by OpenEI (YYYY-MM-DD), or None
-    if OpenEI didn't report one for this rate."""
-    fetched_at: str
-    """Pacific ISO 8601 timestamp this schedule was fetched from OpenEI."""
 
 
 def _trueup_end_param(end_date_iso: str) -> datetime:

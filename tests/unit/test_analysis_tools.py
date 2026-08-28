@@ -23,7 +23,7 @@ from enphase_bridge_mcp.analysis_tools import (
     get_inverter_health,
     get_period_summary,
 )
-from enphase_bridge_mcp.formatting import epoch_to_pacific_iso
+from enphase_bridge_mcp.formatting import epoch_to_pacific_iso, pacific_day_bounds
 
 BRIDGE_URL = "http://localhost:8080"
 
@@ -260,6 +260,51 @@ async def test_get_period_summary_bridge_down_raises_tool_error() -> None:
     respx.get(f"{BRIDGE_URL}/api/energy/windows").mock(side_effect=httpx.ConnectError("refused"))
     with pytest.raises(ToolError, match="Cannot reach enphase-bridge"):
         await get_period_summary(start_date="2026-06-01", end_date="2026-06-02")
+
+
+@respx.mock
+async def test_get_period_summary_avg_excludes_in_progress_today(pinned_now: datetime) -> None:
+    """`avg_daily_produced_kwh` must average only finished days that have data — a
+    still-in-progress "today" inside the range must not drag it toward its partial
+    (so-far) production, even though that partial production still counts toward the
+    period's own `produced_kwh` total."""
+    day1_start_utc, _ = pacific_day_bounds("2026-08-19", now=pinned_now)
+    day2_start_utc, _ = pacific_day_bounds("2026-08-20", now=pinned_now)  # "today"
+    windows = [
+        make_window(int(day1_start_utc.timestamp()), 4000.0, 2000.0),  # finished: 4.0 kWh
+        make_window(int(day2_start_utc.timestamp()), 100.0, 50.0),  # today, partial: 0.1 kWh
+    ]
+    mock_windows(windows)
+
+    result = await get_period_summary(start_date="2026-08-19", end_date="2026-08-20")
+
+    # The period total DOES include today's partial production.
+    assert result.produced_kwh == 4.1
+    # But the average must be over the one finished day only (4.0), not
+    # (4.0 + 0.1) / 2 = 2.05.
+    assert result.avg_daily_produced_kwh == 4.0
+
+
+@respx.mock
+async def test_get_period_summary_daily_breakdown_sum_within_rounding_tolerance(
+    pinned_now: datetime,
+) -> None:
+    """Per-day kWh figures are rounded for display; their sum need not exactly equal
+    the period total (independent per-day roundings can differ from the period's
+    single rounding by a cent or two), but the drift must stay within ordinary
+    display-rounding tolerance, not compound into something larger."""
+    days = ["2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05"]
+    windows = []
+    for i, day in enumerate(days):
+        start_utc, _ = pacific_day_bounds(day, now=pinned_now)
+        # Odd Wh values that don't round cleanly to 2-decimal kWh.
+        windows.append(make_window(int(start_utc.timestamp()), 333.33 + i, 111.11 + i))
+    mock_windows(windows)
+
+    result = await get_period_summary(start_date="2026-06-01", end_date="2026-06-05")
+
+    breakdown_total = round(sum(d.produced_kwh for d in result.daily_breakdown), 1)
+    assert abs(breakdown_total - result.produced_kwh) <= 0.05 * len(days)
 
 
 # --- compare_periods --------------------------------------------------------
