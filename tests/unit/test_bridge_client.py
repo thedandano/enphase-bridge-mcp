@@ -392,3 +392,158 @@ async def test_auth_header_absent_when_no_api_key_configured() -> None:
     )
     await make_client(api_key=None).get_health()
     assert "Authorization" not in route.calls[0].request.headers
+
+
+# --- get_trueup_estimate -----------------------------------------------------
+
+
+@respx.mock
+async def test_get_trueup_estimate_happy_path() -> None:
+    route = respx.get(f"{BRIDGE_URL}/api/trueup/estimate").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "period_start": 1735718400,
+                "period_end": 1755561600,
+                "net_cost_usd": -40.5,
+                "breakdown": {
+                    "peak": {
+                        "import_kwh": 40.0,
+                        "export_kwh": 150.0,
+                        "import_cost_usd": 20.0,
+                        "export_credit_usd": 45.0,
+                    },
+                    "off_peak": {
+                        "import_kwh": 60.0,
+                        "export_kwh": 100.0,
+                        "import_cost_usd": 18.0,
+                        "export_credit_usd": 25.0,
+                    },
+                    "super_off_peak": {
+                        "import_kwh": 20.0,
+                        "export_kwh": 50.0,
+                        "import_cost_usd": 4.0,
+                        "export_credit_usd": 12.5,
+                    },
+                },
+                "tou_schedule": {"id": 1, "rate_label": "EV2-A", "effective_date": "2026-01-01"},
+                "computed_at": 1755720000,
+                "excluded_window_count": 0,
+            },
+        )
+    )
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    end = datetime(2026, 8, 18, tzinfo=UTC)
+    result = await make_client().get_trueup_estimate(start, end)
+    assert result["net_cost_usd"] == -40.5
+    assert result["tou_schedule"]["rate_label"] == "EV2-A"
+    request_params = route.calls[0].request.url.params
+    assert request_params["start"] == "2026-01-01T00:00:00+00:00"
+    assert request_params["end"] == "2026-08-18T00:00:00+00:00"
+
+
+@respx.mock
+async def test_get_trueup_estimate_connect_error_raises_tool_error_with_url() -> None:
+    respx.get(f"{BRIDGE_URL}/api/trueup/estimate").mock(side_effect=httpx.ConnectError("refused"))
+    with pytest.raises(ToolError) as exc_info:
+        await make_client().get_trueup_estimate(
+            datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 8, 18, tzinfo=UTC)
+        )
+    assert BRIDGE_URL in str(exc_info.value)
+    assert "running?" in str(exc_info.value)
+
+
+@respx.mock
+async def test_get_trueup_estimate_no_schedule_raises_tool_error_with_message() -> None:
+    """422 no_tou_schedule: no TOU rate schedule has been fetched yet."""
+    respx.get(f"{BRIDGE_URL}/api/trueup/estimate").mock(
+        return_value=httpx.Response(
+            422,
+            json={
+                "error": "no_tou_schedule",
+                "message": "no TOU rate schedule available; run POST /api/tou/refresh first",
+            },
+        )
+    )
+    with pytest.raises(ToolError) as exc_info:
+        await make_client().get_trueup_estimate(
+            datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 8, 18, tzinfo=UTC)
+        )
+    assert "422" in str(exc_info.value)
+    assert "run POST /api/tou/refresh first" in str(exc_info.value)
+
+
+@respx.mock
+async def test_get_trueup_estimate_malformed_json_raises_explicit_tool_error() -> None:
+    respx.get(f"{BRIDGE_URL}/api/trueup/estimate").mock(
+        return_value=httpx.Response(
+            200, content=b"{not valid json", headers={"content-type": "application/json"}
+        )
+    )
+    with pytest.raises(ToolError) as exc_info:
+        await make_client().get_trueup_estimate(
+            datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 8, 18, tzinfo=UTC)
+        )
+    assert "malformed" in str(exc_info.value).lower()
+
+
+# --- refresh_tou_schedule -----------------------------------------------------
+
+
+@respx.mock
+async def test_refresh_tou_schedule_happy_path() -> None:
+    route = respx.post(f"{BRIDGE_URL}/api/tou/refresh").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "schedule_id": 7,
+                "rate_label": "EV2-A",
+                "utility_name": "San Diego Gas & Electric",
+                "effective_date": "2026-01-01",
+                "fetched_at": 1755720000,
+            },
+        )
+    )
+    result = await make_client().refresh_tou_schedule()
+    assert result["schedule_id"] == 7
+    assert result["rate_label"] == "EV2-A"
+    assert route.calls[0].request.method == "POST"
+
+
+@respx.mock
+async def test_refresh_tou_schedule_connect_error_raises_tool_error_with_url() -> None:
+    respx.post(f"{BRIDGE_URL}/api/tou/refresh").mock(side_effect=httpx.ConnectError("refused"))
+    with pytest.raises(ToolError) as exc_info:
+        await make_client().refresh_tou_schedule()
+    assert BRIDGE_URL in str(exc_info.value)
+    assert "running?" in str(exc_info.value)
+
+
+@respx.mock
+async def test_refresh_tou_schedule_openei_unreachable_raises_tool_error_with_message() -> None:
+    """502 upstream_unavailable: enphase-bridge could not reach OpenEI."""
+    respx.post(f"{BRIDGE_URL}/api/tou/refresh").mock(
+        return_value=httpx.Response(
+            502,
+            json={
+                "error": "upstream_unavailable",
+                "message": "error sending request for url (https://api.openei.org/...)",
+            },
+        )
+    )
+    with pytest.raises(ToolError) as exc_info:
+        await make_client().refresh_tou_schedule()
+    assert "502" in str(exc_info.value)
+    assert "error sending request" in str(exc_info.value)
+
+
+@respx.mock
+async def test_refresh_tou_schedule_malformed_json_raises_explicit_tool_error() -> None:
+    respx.post(f"{BRIDGE_URL}/api/tou/refresh").mock(
+        return_value=httpx.Response(
+            200, content=b"{not valid json", headers={"content-type": "application/json"}
+        )
+    )
+    with pytest.raises(ToolError) as exc_info:
+        await make_client().refresh_tou_schedule()
+    assert "malformed" in str(exc_info.value).lower()
