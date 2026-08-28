@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
@@ -293,7 +294,15 @@ def _apply_bridge_flags(settings: Settings, ip: str | None, port: int | None) ->
     if ":" in host and not host.startswith("["):
         host = f"[{host}]"
     effective_port = port or current.port or (443 if scheme == "https" else 8080)
-    settings.bridge_url = f"{scheme}://{host}:{effective_port}"
+    path = current.path.rstrip("/")  # keep a reverse-proxy prefix like /enphase
+    settings.bridge_url = f"{scheme}://{host}:{effective_port}{path}"
+
+
+def _bridge_port(value: str) -> int:
+    port = int(value)
+    if not 1 <= port <= 65535:
+        raise argparse.ArgumentTypeError(f"port must be 1-65535, got {port}")
+    return port
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -305,7 +314,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument(
         "--port",
-        type=int,
+        type=_bridge_port,
         help="port of the enphase-bridge service (default: from ENPHASE_MCP_BRIDGE_URL or 8080)",
     )
     args = parser.parse_args(argv)
@@ -316,6 +325,14 @@ def main(argv: list[str] | None = None) -> None:
         # Tools construct a fresh Settings() per call (stateless design), so the
         # flag override must travel via the environment to reach them.
         os.environ["ENPHASE_MCP_BRIDGE_URL"] = settings.bridge_url
+    # One startup line stating the effective target, so anyone (or any agent)
+    # reading server output can spot a wrong bridge URL instead of debugging
+    # silent tool failures.
+    print(
+        f"enphase-bridge-mcp: bridge target {settings.bridge_url} · "
+        f"serving MCP at http://{settings.host}:{settings.port}/mcp",
+        file=sys.stderr,
+    )
     server.run(
         transport="streamable-http",
         stateless_http=True,

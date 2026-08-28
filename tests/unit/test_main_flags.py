@@ -66,6 +66,43 @@ def test_ipv6_in_existing_url_stays_bracketed() -> None:
     assert s.bridge_url == "http://[::1]:9090"
 
 
+def test_path_prefix_is_preserved() -> None:
+    s = Settings(bridge_url="https://proxy.example/enphase")
+    _apply_bridge_flags(s, ip=None, port=9443)
+    assert s.bridge_url == "https://proxy.example:9443/enphase"
+
+
+def test_no_path_adds_no_trailing_slash() -> None:
+    s = Settings(bridge_url="http://localhost:8080/")
+    _apply_bridge_flags(s, ip="192.168.1.146", port=None)
+    assert s.bridge_url == "http://192.168.1.146:8080"
+
+
+@pytest.mark.parametrize("bad_port", ["0", "-1", "65536"])
+def test_out_of_range_port_is_a_cli_error(bad_port: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(server_module.MCPServer, "run", lambda self, **kwargs: None)
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--port", bad_port])
+    assert exc_info.value.code == 2  # argparse usage error, not a crash later
+
+
+def test_main_logs_effective_bridge_target(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Startup must state the effective bridge URL on stderr so an agent (or
+    human) reading server output can see the target and prompt the user when
+    it's wrong — silent misconfiguration was the original failure mode."""
+    monkeypatch.setenv("ENPHASE_MCP_BRIDGE_URL", "http://sentinel")
+    monkeypatch.delenv("ENPHASE_MCP_BRIDGE_URL")
+    monkeypatch.setattr(server_module.MCPServer, "run", lambda self, **kwargs: None)
+
+    main(["--ip", "192.168.1.146"])
+
+    err = capsys.readouterr().err
+    assert "http://192.168.1.146:8080" in err
+    assert "/mcp" in err
+
+
 def test_main_exports_flag_url_for_per_call_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Tools build a fresh Settings() per call (stateless design), so main()
     must export the flag-derived URL as ENPHASE_MCP_BRIDGE_URL — mutating its
