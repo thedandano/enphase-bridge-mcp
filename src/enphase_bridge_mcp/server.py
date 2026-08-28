@@ -7,8 +7,12 @@ per-call-connection design. No shared mutable state between calls.
 
 from __future__ import annotations
 
+import argparse
+import os
+import sys
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlparse
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -275,8 +279,60 @@ def _transport_security(settings: Settings) -> TransportSecuritySettings | None:
     )
 
 
-def main() -> None:
+def _apply_bridge_flags(settings: Settings, ip: str | None, port: int | None) -> None:
+    """Overlay --ip/--port onto the configured bridge URL (flags beat env/.env).
+
+    Preserves the configured scheme (an https bridge must not silently downgrade
+    to http — the bearer token would travel in plaintext) and brackets IPv6
+    hosts, which are invalid in a URL authority without them.
+    """
+    if ip is None and port is None:
+        return
+    current = urlparse(settings.bridge_url)
+    scheme = current.scheme or "http"
+    host = ip or current.hostname or "localhost"
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    effective_port = port or current.port or (443 if scheme == "https" else 8080)
+    path = current.path.rstrip("/")  # keep a reverse-proxy prefix like /enphase
+    settings.bridge_url = f"{scheme}://{host}:{effective_port}{path}"
+
+
+def _bridge_port(value: str) -> int:
+    port = int(value)
+    if not 1 <= port <= 65535:
+        raise argparse.ArgumentTypeError(f"port must be 1-65535, got {port}")
+    return port
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(prog="enphase-bridge-mcp")
+    parser.add_argument(
+        "--ip",
+        help="IP/hostname of the enphase-bridge service "
+        "(default: ENPHASE_MCP_BRIDGE_URL or localhost)",
+    )
+    parser.add_argument(
+        "--port",
+        type=_bridge_port,
+        help="port of the enphase-bridge service (default: from ENPHASE_MCP_BRIDGE_URL or 8080)",
+    )
+    args = parser.parse_args(argv)
+
     settings = Settings()
+    if args.ip is not None or args.port is not None:
+        _apply_bridge_flags(settings, args.ip, args.port)
+        # Tools construct a fresh Settings() per call (stateless design), so the
+        # flag override must travel via the environment to reach them.
+        os.environ["ENPHASE_MCP_BRIDGE_URL"] = settings.bridge_url
+    # One startup line stating the effective target, so anyone (or any agent)
+    # reading server output can spot a wrong bridge URL instead of debugging
+    # silent tool failures.
+    print(
+        f"enphase-bridge-mcp: bridge target {settings.bridge_url} · "
+        f"serving MCP at http://{settings.host}:{settings.port}/mcp",
+        file=sys.stderr,
+    )
     server.run(
         transport="streamable-http",
         stateless_http=True,

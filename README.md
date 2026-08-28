@@ -18,12 +18,14 @@ state, every tool call self-contained.
 3. Start this server:
 
 ```sh
-uv run enphase-bridge-mcp
+uv run enphase-bridge-mcp                                  # bridge on this machine (localhost:8080)
+uv run enphase-bridge-mcp --ip 192.168.1.146 --port 8080   # bridge on another machine
 ```
 
-Serves streamable-HTTP MCP at `http://127.0.0.1:8000/mcp` by default. The server must be running
-for tool calls to succeed — installs below work either way; calls fail with a clear error until
-it's up.
+Both flags are optional and point at the **bridge**; they override `ENPHASE_MCP_BRIDGE_URL`
+from the environment or `.env`. Serves streamable-HTTP MCP at `http://127.0.0.1:8000/mcp` by
+default. The server must be running for tool calls to succeed — installs below work either way;
+calls fail with a clear error until it's up.
 
 ## Install — Claude Code
 
@@ -59,9 +61,6 @@ Manual alternative — add to `~/.codex/config.toml`:
 url = "http://127.0.0.1:8000/mcp"
 ```
 
-> **Note:** while this repo is private, marketplace installs require GitHub access to it (SSH/HTTPS
-> auth). Make the repo public before advertising the install commands.
-
 ## Try it
 
 - "How's my solar doing today vs yesterday?"
@@ -85,7 +84,7 @@ Copy `.env.example` to `.env` and adjust as needed:
 
 | Variable | Description |
 | --- | --- |
-| `ENPHASE_MCP_BRIDGE_URL` | Base URL of the enphase-bridge service (default `http://localhost:8080`). |
+| `ENPHASE_MCP_BRIDGE_URL` | Base URL of the enphase-bridge service (default `http://localhost:8080`). The `--ip`/`--port` flags override this. |
 | `ENPHASE_MCP_BRIDGE_API_KEY` | Optional bearer token for the bridge, if it has an API key configured. |
 | `ENPHASE_MCP_HOST` | Host this MCP server binds to (default `127.0.0.1`). |
 | `ENPHASE_MCP_PORT` | Port this MCP server binds to (default `8000`). |

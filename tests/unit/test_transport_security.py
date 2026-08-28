@@ -71,7 +71,7 @@ class TestMainPassesTransportSecurity:
 
         monkeypatch.setattr(server_module.MCPServer, "run", fake_run)
 
-        main()
+        main([])
 
         assert captured["transport"] == "streamable-http"
         assert captured["host"] == "0.0.0.0"
@@ -91,6 +91,6 @@ class TestMainPassesTransportSecurity:
 
         monkeypatch.setattr(server_module.MCPServer, "run", fake_run)
 
-        main()
+        main([])
 
         assert captured["transport_security"] is None
