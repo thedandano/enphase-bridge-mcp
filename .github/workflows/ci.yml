@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [dev]
+  push:
+    branches: [dev, main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Lint (ruff check)
+        run: uv run ruff check .
+
+      - name: Format check (ruff format)
+        run: uv run ruff format --check .
+
+      - name: Type check (mypy)
+        run: uv run mypy src
+
+      - name: Security lint (bandit)
+        run: uv run bandit -r src
+
+      - name: Export locked requirements
+        run: uv export --no-emit-project --format requirements-txt > requirements.lock.txt
+
+      - name: Dependency audit (pip-audit)
+        run: uv run pip-audit -r requirements.lock.txt
+
+      - name: Unit tests (with coverage gate)
+        run: uv run pytest tests/unit --cov=src/enphase_bridge_mcp --cov-fail-under=80
+
+      - name: Integration tests
+        run: uv run pytest tests/integration
+
+      - name: BDD tests (behave)
+        run: uv run behave
