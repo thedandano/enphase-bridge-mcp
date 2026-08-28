@@ -103,7 +103,7 @@ async def mcp_client_session(app: Starlette) -> AsyncIterator[ClientSession]:
 # --- tools/list --------------------------------------------------------
 
 
-async def test_tools_list_shows_all_six_tools_with_structured_schemas() -> None:
+async def test_tools_list_shows_all_eight_tools_with_structured_schemas() -> None:
     async with mcp_app() as app, mcp_client_session(app) as session:
         result = await session.list_tools()
 
@@ -115,6 +115,8 @@ async def test_tools_list_shows_all_six_tools_with_structured_schemas() -> None:
         "get_period_summary",
         "compare_periods",
         "get_inverter_health",
+        "get_trueup_estimate",
+        "refresh_tou_schedule",
     }
 
     with_schema = {tool.name for tool in result.tools if tool.output_schema is not None}
@@ -125,6 +127,21 @@ async def test_tools_list_shows_all_six_tools_with_structured_schemas() -> None:
     schema_properties = daily_summary_tool.output_schema["properties"]
     assert "produced_kwh" in schema_properties
     assert "self_consumption_pct" in schema_properties
+
+
+async def test_tools_list_refresh_tou_schedule_carries_mutation_annotations() -> None:
+    """`refresh_tou_schedule` mutates upstream state, so it must be flagged
+    not-read-only — and NOT idempotent, since the bridge's persistence is a
+    plain append-only INSERT (no upsert): every call adds a new schedule row
+    and changes the "latest" result, so a client must not auto-retry it as if
+    repeats were free of additional effect."""
+    async with mcp_app() as app, mcp_client_session(app) as session:
+        result = await session.list_tools()
+
+    refresh_tool = next(t for t in result.tools if t.name == "refresh_tou_schedule")
+    assert refresh_tool.annotations is not None
+    assert refresh_tool.annotations.read_only_hint is False
+    assert refresh_tool.annotations.idempotent_hint is False
 
 
 # --- tools/call happy path --------------------------------------------------------

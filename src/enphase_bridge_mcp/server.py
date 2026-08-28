@@ -278,8 +278,9 @@ async def compare_days(date_a: str = "today", date_b: str = "yesterday") -> DayC
     )
 
 
-# Import-time side effect: registers @server.tool()s defined in analysis_tools.
+# Import-time side effect: registers @server.tool()s defined in analysis_tools/cost_tools.
 from . import analysis_tools as _analysis_tools  # noqa: E402,F401
+from . import cost_tools as _cost_tools  # noqa: E402,F401
 
 app: Starlette = server.streamable_http_app(stateless_http=True)
 
