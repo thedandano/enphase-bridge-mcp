@@ -20,11 +20,30 @@ BRIDGE_URL = "http://localhost:8080"
 
 
 def _windows_handler(context: Any) -> Any:
-    """Route `/api/energy/windows` to whichever fixture list matches the request's `start`."""
+    """Route `/api/energy/windows` to every fixture day whose start falls in [start, end).
+
+    A single-day scenario's `[start, end)` bounds exactly one registered day, so
+    this stays equivalent to the old exact-match lookup for those. A multi-day
+    period scenario's wider bounds sweep in every day registered inside the
+    range, letting `get_period_summary`/`compare_periods` page the whole range
+    in one mocked request — matching how `BridgeClient.list_windows` really pages.
+    """
 
     def handler(request: httpx.Request) -> httpx.Response:
         start = request.url.params.get("start")
-        windows = context.day_windows_by_start.get(start, [])
+        end = request.url.params.get("end")
+        start_dt = datetime.fromisoformat(start) if start else None
+        end_dt = datetime.fromisoformat(end) if end else None
+
+        windows: list[dict[str, Any]] = []
+        for day_start_iso, day_windows in context.day_windows_by_start.items():
+            day_start_dt = datetime.fromisoformat(day_start_iso)
+            if start_dt is not None and day_start_dt < start_dt:
+                continue
+            if end_dt is not None and day_start_dt >= end_dt:
+                continue
+            windows.extend(day_windows)
+
         return httpx.Response(
             200, json={"windows": windows, "total": len(windows), "limit": 2880, "offset": 0}
         )

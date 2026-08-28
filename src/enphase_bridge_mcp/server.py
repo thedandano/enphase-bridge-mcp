@@ -100,6 +100,16 @@ def _build_client() -> BridgeClient:
     return BridgeClient(Settings())
 
 
+def _now() -> datetime:
+    """Current instant, resolved through this module's `datetime` global.
+
+    Exists so other modules (e.g. `analysis_tools`) can share one clock that
+    tests pin the same way `test_tools.py`'s `pinned_now` fixture already
+    does: by monkeypatching `enphase_bridge_mcp.server.datetime`.
+    """
+    return datetime.now(tz=UTC)
+
+
 async def _build_daily_summary(client: BridgeClient, date_spec: str, now: datetime) -> DailySummary:
     """Fetch and aggregate one Pacific day's windows into a `DailySummary`.
 
@@ -179,7 +189,7 @@ async def get_current_status() -> CurrentStatus:
     an error if the bridge is unreachable or has no recent power samples.
     """
     client = _build_client()
-    now = datetime.now(tz=UTC)
+    now = _now()
 
     health = await client.get_health()
     latest_window = await client.get_latest_window()
@@ -233,7 +243,7 @@ async def get_daily_summary(date: str = "today") -> DailySummary:
     """
     client = _build_client()
     try:
-        return await _build_daily_summary(client, date, datetime.now(tz=UTC))
+        return await _build_daily_summary(client, date, _now())
     except ValueError as exc:
         raise ToolError(str(exc)) from exc
 
@@ -249,7 +259,7 @@ async def compare_days(date_a: str = "today", date_b: str = "yesterday") -> DayC
     zero. Raises an error for an invalid date, or if either day has no data.
     """
     client = _build_client()
-    now = datetime.now(tz=UTC)
+    now = _now()
     try:
         day_a = await _build_daily_summary(client, date_a, now)
         day_b = await _build_daily_summary(client, date_b, now)
@@ -267,6 +277,9 @@ async def compare_days(date_a: str = "today", date_b: str = "yesterday") -> DayC
         net_pct_diff=_pct_diff(day_a.net_kwh, day_b.net_kwh),
     )
 
+
+# Import-time side effect: registers @server.tool()s defined in analysis_tools.
+from . import analysis_tools as _analysis_tools  # noqa: E402,F401
 
 app: Starlette = server.streamable_http_app(stateless_http=True)
 
