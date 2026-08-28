@@ -42,6 +42,30 @@ def test_configured_url_without_explicit_port_defaults_8080() -> None:
     assert s.bridge_url == "http://192.168.1.146:8080"
 
 
+def test_https_scheme_is_preserved() -> None:
+    s = Settings(bridge_url="https://bridge.example:8443")
+    _apply_bridge_flags(s, ip=None, port=9443)
+    assert s.bridge_url == "https://bridge.example:9443"
+
+
+def test_https_without_port_defaults_443() -> None:
+    s = Settings(bridge_url="https://bridge.example")
+    _apply_bridge_flags(s, ip="bridge2.example", port=None)
+    assert s.bridge_url == "https://bridge2.example:443"
+
+
+def test_ipv6_flag_gets_bracketed() -> None:
+    s = Settings(bridge_url="http://localhost:8080")
+    _apply_bridge_flags(s, ip="::1", port=None)
+    assert s.bridge_url == "http://[::1]:8080"
+
+
+def test_ipv6_in_existing_url_stays_bracketed() -> None:
+    s = Settings(bridge_url="http://[::1]:8080")
+    _apply_bridge_flags(s, ip=None, port=9090)
+    assert s.bridge_url == "http://[::1]:9090"
+
+
 def test_main_exports_flag_url_for_per_call_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Tools build a fresh Settings() per call (stateless design), so main()
     must export the flag-derived URL as ENPHASE_MCP_BRIDGE_URL — mutating its

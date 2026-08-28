@@ -279,13 +279,21 @@ def _transport_security(settings: Settings) -> TransportSecuritySettings | None:
 
 
 def _apply_bridge_flags(settings: Settings, ip: str | None, port: int | None) -> None:
-    """Overlay --ip/--port onto the configured bridge URL (flags beat env/.env)."""
+    """Overlay --ip/--port onto the configured bridge URL (flags beat env/.env).
+
+    Preserves the configured scheme (an https bridge must not silently downgrade
+    to http — the bearer token would travel in plaintext) and brackets IPv6
+    hosts, which are invalid in a URL authority without them.
+    """
     if ip is None and port is None:
         return
     current = urlparse(settings.bridge_url)
+    scheme = current.scheme or "http"
     host = ip or current.hostname or "localhost"
-    effective_port = port or current.port or 8080
-    settings.bridge_url = f"http://{host}:{effective_port}"
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    effective_port = port or current.port or (443 if scheme == "https" else 8080)
+    settings.bridge_url = f"{scheme}://{host}:{effective_port}"
 
 
 def main(argv: list[str] | None = None) -> None:
