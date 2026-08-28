@@ -1,6 +1,6 @@
 {
   "name": "enphase-plugins",
-  "owner": { "name": "Dan Dano", "url": "https://github.com/thedandano" },
+  "owner": { "name": "thedandano", "url": "https://github.com/thedandano" },
   "plugins": [
     {
       "name": "enphase-bridge",
