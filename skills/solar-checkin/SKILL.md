@@ -1,6 +1,6 @@
 ---
 name: solar-checkin
-description: Answer quick questions about the user's home solar system right now and today. Use this skill whenever the user asks anything like "how's my solar", "how much am I producing right now", "solar today", "how'd we do today vs yesterday", "is my system exporting", or any casual check-in about current solar production, consumption, or grid flow — even if they don't name a tool.
+description: Answer quick questions about the user's home solar system right now, today, or a single specific day. Use this skill whenever the user asks anything like "how's my solar", "how much am I producing right now", "solar today", "how'd we do today vs yesterday", "how'd solar do yesterday", "is my system exporting", or any casual check-in about current solar production, consumption, or grid flow — even if they don't name a tool.
 ---
 
 # Solar Check-in
@@ -9,8 +9,9 @@ Answer with real numbers from the enphase MCP tools — never estimate or invent
 
 ## Recipe
 
-1. Call `get_current_status` — always.
+1. Call `get_current_status` — always, when the question involves "now" or today.
 2. Also call `compare_days` (defaults: today vs yesterday) when the user implies a comparison ("how am I doing", "vs yesterday", "better than").
+3. For a specific past day ("yesterday", "last Tuesday"), call `get_daily_summary(date)` instead of `get_current_status` — there is no "right now" for a finished day, so use only the 📊 line of the template.
 
 ## Reading the data correctly
 

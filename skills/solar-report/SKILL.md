@@ -11,7 +11,7 @@ Build reports from the enphase MCP tools — never estimate or fill gaps with in
 
 1. Resolve the user's period to Pacific calendar dates (`YYYY-MM-DD`).
 2. Call `get_period_summary(start_date, end_date)` for the period.
-3. For trends or "vs last ..." questions, also call `compare_periods` with an equal-length, immediately-prior period (e.g. last week vs the week before). The tool returns both day counts — mention them if the periods differ.
+3. For trends or "vs ..." questions, also call `compare_periods` with the comparison period the user implies (e.g. "July vs last July" = one year back); default to the equal-length, immediately-prior period (last week vs the week before). The tool returns both day counts — mention them if the periods differ.
 4. Pull `best_day` / `worst_day` from the summary — they only consider days with real, finished data.
 
 ## Limits and caveats

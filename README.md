@@ -69,6 +69,16 @@ url = "http://127.0.0.1:8000/mcp"
 - "Are any of my inverters having problems?"
 - "What would my true-up bill look like for the last year?"
 
+## Bundled skills
+
+Installing the plugin also bundles four skills that route natural-language questions to the right
+tools and format every answer the same way, every time:
+
+- **solar-checkin** — "How's my solar?" → live status + today vs yesterday, with staleness caveats.
+- **solar-report** — "How was last week/month?" → structured period report with best/worst days.
+- **solar-savings** — "What's my true-up? How do I save?" → cost/credit breakdown by TOU period + one data-derived tip.
+- **solar-troubleshoot** — "Is something wrong?" → ordered diagnosis: data pipeline vs offline inverters vs low production.
+
 ## Configuration
 
 Copy `.env.example` to `.env` and adjust as needed:

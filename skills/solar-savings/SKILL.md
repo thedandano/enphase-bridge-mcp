@@ -24,10 +24,12 @@ Money answers come from `get_trueup_estimate` — never invent tariffs, projecti
 ALWAYS use this exact template (drop bracketed parts when not applicable):
 
 ```
-💰 True-up estimate (<start> → <end>): <you're $X ahead | on track to owe $X>
-Peak: imported <A> kWh ($<B>) · exported <C> kWh ($<D> credit)
-Off-peak: imported <A> kWh ($<B>) · exported <C> kWh ($<D> credit)
-Super off-peak: imported <A> kWh ($<B>) · exported <C> kWh ($<D> credit)
+💰 True-up estimate (<start> → <end>): <you're $X ahead so far | you owe $X so far>
+Peak: imported <kWh> kWh ($<cost>) · exported <kWh> kWh ($<credit> credit)
+Off-peak: imported <kWh> kWh ($<cost>) · exported <kWh> kWh ($<credit> credit)
+Super off-peak: imported <kWh> kWh ($<cost>) · exported <kWh> kWh ($<credit> credit)
 💡 Tip: <one advice line derived from the largest import-cost bucket>
 ⚠️ <only if applicable: excluded windows / stale schedule caveat>
 ```
+
+"So far" matters: the estimate covers the requested range only — it is not a year-end projection, and the tool returns none.

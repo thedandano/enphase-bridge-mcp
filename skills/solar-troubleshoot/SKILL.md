@@ -12,7 +12,7 @@ Diagnose in a fixed order — the order matters because stale data mimics dead h
 1. `get_inverter_health` — check `data_as_of` FIRST. If it's old, the collector/bridge pipeline is the problem, **not the panels**; don't report inverters as broken from stale data.
 2. Check `attention_needed` — each entry is a specific offline inverter with its array and last-report time.
 3. `get_current_status` — live confirmation (is_online, current watts).
-4. `compare_days` or `get_daily_summary` for recent days — size the actual production impact.
+4. `compare_days` for today-vs-yesterday, or `get_period_summary` over the last ~7 days — size the actual production impact in one call.
 
 ## The three failure classes — always name which one applies
 
