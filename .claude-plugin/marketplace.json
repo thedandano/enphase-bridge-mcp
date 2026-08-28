@@ -1,0 +1,12 @@
+{
+  "name": "enphase-plugins",
+  "owner": { "name": "Dan Dano", "url": "https://github.com/thedandano" },
+  "plugins": [
+    {
+      "name": "enphase-bridge",
+      "source": "./",
+      "description": "Solar production, history, analysis, and cost tools backed by the local enphase-bridge service.",
+      "version": "0.1.0"
+    }
+  ]
+}

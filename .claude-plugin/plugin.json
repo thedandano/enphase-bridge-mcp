@@ -1,0 +1,10 @@
+{
+  "name": "enphase-bridge",
+  "description": "Ask your AI about your home solar: current production, history, comparisons, inverter health, and true-up cost estimates via the local enphase-bridge service.",
+  "version": "0.1.0",
+  "author": { "name": "Dan Dano" },
+  "homepage": "https://github.com/thedandano/enphase-bridge-mcp",
+  "repository": "https://github.com/thedandano/enphase-bridge-mcp",
+  "license": "MIT",
+  "keywords": ["enphase", "solar", "energy", "mcp"]
+}
