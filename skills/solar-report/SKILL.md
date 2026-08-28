@@ -17,7 +17,7 @@ Build reports from the enphase MCP tools — never estimate or fill gaps with in
 ## Limits and caveats
 
 - The tools cap ranges at **92 days** and error beyond it by design. For longer questions, split into chunks (e.g. quarters) or ask the user to narrow — don't retry blindly.
-- `data_completeness_pct` below 100 or days with `has_data` false mean gaps: caveat in one line. The daily average already excludes unfinished/missing days — say so if the user asks why numbers look different.
+- `data_completeness_pct` below 100, days with `has_data` false, **or any day with `is_partial` true** mean gaps: caveat in one line. Note `data_completeness_pct` can read 100 while today is still in progress (its denominator is windows expected *so far*) — so a range that includes today always gets the caveat, and a comparison against a completed prior period must name the partial day rather than compare as complete. The daily average already excludes unfinished/missing days — say so if the user asks why numbers look different.
 
 ## Output format
 

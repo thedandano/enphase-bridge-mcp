@@ -11,7 +11,7 @@ Answer with real numbers from the enphase MCP tools — never estimate or invent
 
 1. Call `get_current_status` — always, when the question involves "now" or today.
 2. Also call `compare_days` (defaults: today vs yesterday) when the user implies a comparison ("how am I doing", "vs yesterday", "better than").
-3. For a specific past day ("yesterday", "last Tuesday"), call `get_daily_summary(date)` instead of `get_current_status` — there is no "right now" for a finished day, so use only the 📊 line of the template.
+3. For a specific past day ("yesterday", "last Tuesday"), call `get_daily_summary(date)` instead of `get_current_status` — there is no "right now" for a finished day, so use only the 📊 line of the template, with the resolved day as its label (e.g. `📊 Yesterday (2026-08-27): ...`), never the word "Today".
 
 ## Reading the data correctly
 
