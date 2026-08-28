@@ -105,3 +105,7 @@ class BridgeClient:
             params={"start": start_epoch, "end": end_epoch, "limit": limit},
         )
         return list(result["samples"])
+
+    async def get_inverter_arrays(self) -> dict[str, Any]:
+        result = await self._get("/api/inverters/arrays")
+        return dict(result)
