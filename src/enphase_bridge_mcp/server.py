@@ -8,15 +8,17 @@ per-call-connection design. No shared mutable state between calls.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
-from pydantic import BaseModel
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 
 from .bridge_client import BridgeClient
 from .config import Settings
 from .formatting import PACIFIC, epoch_to_pacific_iso, pacific_day_bounds, wh_to_kwh
+from .models import CurrentStatus, DailySummary, DayComparison
 
 server: MCPServer = MCPServer(
     name="enphase-bridge-mcp",
@@ -27,73 +29,6 @@ server: MCPServer = MCPServer(
         "(Pacific) ISO 8601 strings."
     ),
 )
-
-
-class CurrentStatus(BaseModel):
-    """Live snapshot of the solar system plus today's running totals."""
-
-    production_w: float
-    """Instantaneous solar production, in watts."""
-    consumption_w: float
-    """Instantaneous site consumption, in watts."""
-    grid_w: float
-    """Instantaneous grid flow, in watts. Negative means exporting to the grid."""
-    is_online: bool
-    """True if the bridge has recorded a completed window within the last ~20 minutes."""
-    last_data_at: str
-    """Pacific ISO 8601 timestamp of the most recent completed energy window."""
-    today_produced_kwh: float
-    """Energy produced so far today (since Pacific midnight), in kWh."""
-    today_consumed_kwh: float
-    """Energy consumed so far today (since Pacific midnight), in kWh."""
-    today_exported_kwh: float
-    """Energy exported to the grid so far today (since Pacific midnight), in kWh."""
-    today_data_completeness_pct: float
-    """Share of today's expected 15-minute windows (so far) marked complete by the bridge, 0-100.
-
-    A value below 100 means the running totals above are based on partial or
-    missing data (collector gap, restart, etc.) rather than a full record of
-    the day so far.
-    """
-    uptime_seconds: int
-    """Seconds since the enphase-bridge process started."""
-
-
-class DailySummary(BaseModel):
-    """Aggregated energy totals for one Pacific civil day."""
-
-    date: str
-    """The Pacific civil date this summary covers, as YYYY-MM-DD."""
-    produced_kwh: float
-    consumed_kwh: float
-    imported_kwh: float
-    exported_kwh: float
-    net_kwh: float
-    """produced_kwh - consumed_kwh: positive means the site generated a surplus that day."""
-    self_consumption_pct: float
-    """Share of produced energy consumed on-site rather than exported, 0-100."""
-    peak_production_w: float
-    """Highest average production across any 15-minute window that day, in watts."""
-    peak_production_at: str
-    """Pacific ISO 8601 start time of the peak-production window."""
-    data_completeness_pct: float
-    """Share of that day's 15-minute windows marked complete by the bridge, 0-100."""
-
-
-class DayComparison(BaseModel):
-    """Two daily summaries plus the deltas between them (day_a minus day_b)."""
-
-    day_a: DailySummary
-    day_b: DailySummary
-    produced_kwh_diff: float
-    produced_pct_diff: float
-    """Percent change in produced_kwh, day_a vs day_b. 0.0 if day_b's value is zero."""
-    consumed_kwh_diff: float
-    consumed_pct_diff: float
-    """Percent change in consumed_kwh, day_a vs day_b. 0.0 if day_b's value is zero."""
-    net_kwh_diff: float
-    net_pct_diff: float
-    """Percent change in net_kwh, day_a vs day_b. 0.0 if day_b's value is zero."""
 
 
 def _build_client() -> BridgeClient:
@@ -177,6 +112,54 @@ def _pct_diff(a: float, b: float) -> float:
     return round((a - b) / abs(b) * 100, 2)
 
 
+def _is_bridge_online(window_start: int, now: datetime) -> bool:
+    """True if the most recently completed window ended within the last ~20 minutes.
+
+    `/api/energy/windows/latest` returns the most recently *completed* window,
+    stamped with its start time — so staleness must be measured from the
+    window's end (start + 900s), not its start, or a healthy bridge looks
+    offline for most of each 15-minute cycle.
+    """
+    window_end = window_start + 900
+    return (now.timestamp() - window_end) <= 20 * 60
+
+
+async def _fetch_latest_power_sample(client: BridgeClient, now: datetime) -> dict[str, Any]:
+    """Fetch the most recent power sample from the last 5 minutes.
+
+    Raises:
+        ToolError: no power samples were recorded in that window.
+    """
+    now_epoch = int(now.timestamp())
+    samples = await client.get_power_samples(now_epoch - 300, now_epoch, limit=50)
+    if not samples:
+        raise ToolError("enphase-bridge returned no power samples in the last 5 minutes")
+    return max(samples, key=lambda s: s["sampled_at"])
+
+
+async def _fetch_today_running_totals(
+    client: BridgeClient, now: datetime
+) -> tuple[float, float, float, float]:
+    """Fetch today's windows so far and aggregate them into running totals.
+
+    Returns (produced_kwh, consumed_kwh, exported_kwh, data_completeness_pct).
+    """
+    day_start_utc, _day_end_utc = pacific_day_bounds("today", now=now)
+    today_windows = await client.list_windows(day_start_utc, now)
+    today_produced_kwh = wh_to_kwh(sum(w["wh_produced"] for w in today_windows))
+    today_consumed_kwh = wh_to_kwh(sum(w["wh_consumed"] for w in today_windows))
+    today_exported_kwh = wh_to_kwh(sum(w["wh_grid_export"] for w in today_windows))
+    expected_today_windows = max(1, int((now - day_start_utc).total_seconds() // 900))
+    complete_today_count = sum(1 for w in today_windows if w["is_complete"])
+    today_data_completeness_pct = round(complete_today_count / expected_today_windows * 100, 2)
+    return (
+        today_produced_kwh,
+        today_consumed_kwh,
+        today_exported_kwh,
+        today_data_completeness_pct,
+    )
+
+
 @server.tool()
 async def get_current_status() -> CurrentStatus:
     """Get the solar system's live status: current power flow and today's running totals.
@@ -194,35 +177,21 @@ async def get_current_status() -> CurrentStatus:
     health = await client.get_health()
     latest_window = await client.get_latest_window()
     window_start = int(latest_window["window_start"])
-    # `/api/energy/windows/latest` returns the most recently *completed* window,
-    # stamped with its start time — so staleness must be measured from the
-    # window's end (start + 900s), not its start, or a healthy bridge looks
-    # offline for most of each 15-minute cycle.
-    window_end = window_start + 900
-    is_online = (now.timestamp() - window_end) <= 20 * 60
-    last_data_at = epoch_to_pacific_iso(window_start)
 
-    now_epoch = int(now.timestamp())
-    samples = await client.get_power_samples(now_epoch - 300, now_epoch, limit=50)
-    if not samples:
-        raise ToolError("enphase-bridge returned no power samples in the last 5 minutes")
-    latest_sample = max(samples, key=lambda s: s["sampled_at"])
-
-    day_start_utc, _day_end_utc = pacific_day_bounds("today", now=now)
-    today_windows = await client.list_windows(day_start_utc, now)
-    today_produced_kwh = wh_to_kwh(sum(w["wh_produced"] for w in today_windows))
-    today_consumed_kwh = wh_to_kwh(sum(w["wh_consumed"] for w in today_windows))
-    today_exported_kwh = wh_to_kwh(sum(w["wh_grid_export"] for w in today_windows))
-    expected_today_windows = max(1, int((now - day_start_utc).total_seconds() // 900))
-    complete_today_count = sum(1 for w in today_windows if w["is_complete"])
-    today_data_completeness_pct = round(complete_today_count / expected_today_windows * 100, 2)
+    latest_sample = await _fetch_latest_power_sample(client, now)
+    (
+        today_produced_kwh,
+        today_consumed_kwh,
+        today_exported_kwh,
+        today_data_completeness_pct,
+    ) = await _fetch_today_running_totals(client, now)
 
     return CurrentStatus(
         production_w=float(latest_sample["production_w"]),
         consumption_w=float(latest_sample["consumption_w"]),
         grid_w=float(latest_sample["grid_w"]),
-        is_online=is_online,
-        last_data_at=last_data_at,
+        is_online=_is_bridge_online(window_start, now),
+        last_data_at=epoch_to_pacific_iso(window_start),
         today_produced_kwh=today_produced_kwh,
         today_consumed_kwh=today_consumed_kwh,
         today_exported_kwh=today_exported_kwh,
@@ -285,10 +254,35 @@ from . import cost_tools as _cost_tools  # noqa: E402,F401
 app: Starlette = server.streamable_http_app(stateless_http=True)
 
 
+def _transport_security(settings: Settings) -> TransportSecuritySettings | None:
+    """Build explicit transport security settings from `settings.allowed_hosts`.
+
+    Returns `None` when `allowed_hosts` is empty (the default), which leaves
+    the SDK's own defaults in place: DNS-rebinding protection auto-enabled
+    with a loopback-only Host/Origin allowlist when bound to a loopback host
+    (127.0.0.1/localhost/::1), and left disabled otherwise — see
+    `mcp.server.lowlevel.server.Server.streamable_http_app`. There is
+    deliberately no wildcard fallback here: binding to a non-loopback host
+    (e.g. `ENPHASE_MCP_HOST=0.0.0.0` to serve LAN clients) only accepts
+    connections from the hosts explicitly listed in `allowed_hosts`.
+    """
+    if not settings.allowed_hosts:
+        return None
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=settings.allowed_hosts,
+        allowed_origins=[f"http://{host}" for host in settings.allowed_hosts],
+    )
+
+
 def main() -> None:
     settings = Settings()
     server.run(
-        transport="streamable-http", stateless_http=True, host=settings.host, port=settings.port
+        transport="streamable-http",
+        stateless_http=True,
+        host=settings.host,
+        port=settings.port,
+        transport_security=_transport_security(settings),
     )
 
 
