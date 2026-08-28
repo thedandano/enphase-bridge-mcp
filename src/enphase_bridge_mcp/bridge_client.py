@@ -30,14 +30,14 @@ class BridgeClient:
             return {"Authorization": f"Bearer {self._settings.bridge_api_key}"}
         return {}
 
-    async def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+    async def _request(self, method: str, path: str, params: dict[str, Any] | None = None) -> Any:
         async with httpx.AsyncClient(
             base_url=self._settings.bridge_url,
             timeout=10.0,
             headers=self._headers(),
         ) as client:
             try:
-                response = await client.get(path, params=params)
+                response = await client.request(method, path, params=params)
             except (httpx.ConnectError, httpx.TimeoutException) as exc:
                 raise ToolError(
                     f"Cannot reach enphase-bridge at {self._settings.bridge_url}: "
@@ -54,6 +54,12 @@ class BridgeClient:
                 f"enphase-bridge returned malformed JSON from {path} "
                 f"(status {response.status_code}): {exc}"
             ) from exc
+
+    async def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        return await self._request("GET", path, params=params)
+
+    async def _post(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        return await self._request("POST", path, params=params)
 
     @staticmethod
     def _describe_error(response: httpx.Response) -> str:
@@ -108,4 +114,25 @@ class BridgeClient:
 
     async def get_inverter_arrays(self) -> dict[str, Any]:
         result = await self._get("/api/inverters/arrays")
+        return dict(result)
+
+    async def get_trueup_estimate(self, start_utc: datetime, end_utc: datetime) -> dict[str, Any]:
+        """Fetch a true-up cost estimate for [start_utc, end_utc].
+
+        Passed straight through as RFC3339 `start`/`end` query params — note the
+        bridge's own handler treats `end` as a UTC calendar-day marker and adds a
+        fixed 24h internally to make it inclusive, so callers computing `end_utc`
+        from a Pacific date must account for that quirk themselves (see
+        `cost_tools._trueup_end_param`), not assume `end_utc` is the literal
+        exclusive bound like it is for `list_windows`.
+        """
+        result = await self._get(
+            "/api/trueup/estimate",
+            params={"start": start_utc.isoformat(), "end": end_utc.isoformat()},
+        )
+        return dict(result)
+
+    async def refresh_tou_schedule(self) -> dict[str, Any]:
+        """Fetch the latest TOU rate schedule from OpenEI and persist it as current."""
+        result = await self._post("/api/tou/refresh")
         return dict(result)
