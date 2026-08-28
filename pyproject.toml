@@ -1,6 +1,6 @@
 [project]
 name = "enphase-bridge-mcp"
-version = "0.1.0"
+version = "1.0.0"
 description = "MCP server bridging LLM tool calls to the local enphase-bridge Rust service"
 readme = "README.md"
 authors = [
