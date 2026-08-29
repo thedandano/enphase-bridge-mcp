@@ -10,11 +10,11 @@ on:
 env:
   IMAGE: ghcr.io/${{ github.repository }}
 
-# One publish at a time per commit: a release merge pushes main and the
-# vX.Y.Z tag at the same SHA, and both green CI runs would otherwise race
-# each other rebuilding and re-pushing :latest concurrently.
+# Serialize ALL publishes, not just per-SHA: concurrent CD runs for
+# different commits could otherwise interleave and publish out of order.
+# Queued runs re-check the main tip before touching `latest` (below).
 concurrency:
-  group: cd-${{ github.event.workflow_run.head_sha }}
+  group: cd-publish
 
 jobs:
   publish:
@@ -66,26 +66,22 @@ jobs:
             # deployments back.
             tags="${tags},${IMAGE}:${HEAD_BRANCH}"
           else
-            # `latest` only while this SHA is still the tip of main: CI runs
-            # for successive commits can finish out of order, and a stale run
-            # pushing last would point `latest` at older code.
-            if [[ "$(git ls-remote origin refs/heads/main | cut -f1)" == "${HEAD_SHA}" ]]; then
-              tags="${tags},${IMAGE}:latest"
-            else
-              echo "::notice::skipping latest — ${HEAD_SHA:0:7} is no longer the tip of main"
-            fi
             # Mint the vX.Y.Z image tag from pyproject.toml. release-please
             # creates git tags with GITHUB_TOKEN, whose events never trigger
-            # CI, so a tag-triggered publish would silently never run. First
-            # main build after a release mints it; the registry check makes
-            # it immutable thereafter.
+            # CI, so a tag-triggered publish would silently never run. Only
+            # mint when the git tag points at the exact commit being built:
+            # every post-release commit still carries the released version in
+            # pyproject.toml, and must not fill in (or move) that image tag.
             ver="v$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
-            if docker manifest inspect "${IMAGE}:${ver}" >/dev/null 2>&1; then
-              echo "::notice::${IMAGE}:${ver} already published — not overwriting"
-            else
+            if [[ "$(git ls-remote origin "refs/tags/${ver}" | cut -f1)" == "${HEAD_SHA}" ]]; then
               tags="${tags},${IMAGE}:${ver}"
+            else
+              echo "::notice::not minting ${ver} — git tag absent or points at a different commit"
             fi
           fi
+          # `latest` is deliberately NOT computed here: the tip-of-main check
+          # must happen after the (slow) build, not minutes before it — see
+          # the retag step below.
           echo "tags=${tags}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -96,3 +92,20 @@ jobs:
           tags: ${{ steps.tags.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Point latest at this build
+        if: github.event.workflow_run.head_branch == 'main'
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        # The check-then-act gap: deciding `latest` before the multi-arch
+        # build leaves minutes for a newer commit's (faster) run to publish
+        # first and then be overwritten. So decide at the last instant —
+        # re-check the tip AFTER the build and retag the already-pushed
+        # manifest, an instant metadata copy with no rebuild.
+        run: |
+          set -euo pipefail
+          if [[ "$(git ls-remote origin refs/heads/main | cut -f1)" == "${HEAD_SHA}" ]]; then
+            docker buildx imagetools create -t "${IMAGE}:latest" "${IMAGE}:${HEAD_SHA:0:7}"
+          else
+            echo "::notice::skipping latest — ${HEAD_SHA:0:7} is no longer the tip of main"
+          fi
