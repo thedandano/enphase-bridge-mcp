@@ -274,14 +274,6 @@ async def _healthz(_request: Request) -> JSONResponse:
 app: Starlette = server.streamable_http_app(stateless_http=True)
 
 
-async def _healthz(_request: Request) -> JSONResponse:
-    """Liveness probe for Docker/proxy healthchecks; never calls the bridge."""
-    return JSONResponse({"status": "ok"})
-
-
-app.add_route("/healthz", _healthz, methods=["GET"])
-
-
 def _transport_security(settings: Settings) -> TransportSecuritySettings | None:
     """Build explicit transport security settings from `settings.allowed_hosts`.
 
