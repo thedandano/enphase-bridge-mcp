@@ -59,9 +59,32 @@ jobs:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-          tags="${IMAGE}:${HEAD_SHA:0:7},${IMAGE}:latest"
+          tags="${IMAGE}:${HEAD_SHA:0:7}"
           if [[ "${HEAD_BRANCH}" == v* ]]; then
+            # Manual tag push (escape hatch): publish the version tag only.
+            # Never `latest` — a re-push of an old release must not roll
+            # deployments back.
             tags="${tags},${IMAGE}:${HEAD_BRANCH}"
+          else
+            # `latest` only while this SHA is still the tip of main: CI runs
+            # for successive commits can finish out of order, and a stale run
+            # pushing last would point `latest` at older code.
+            if [[ "$(git ls-remote origin refs/heads/main | cut -f1)" == "${HEAD_SHA}" ]]; then
+              tags="${tags},${IMAGE}:latest"
+            else
+              echo "::notice::skipping latest — ${HEAD_SHA:0:7} is no longer the tip of main"
+            fi
+            # Mint the vX.Y.Z image tag from pyproject.toml. release-please
+            # creates git tags with GITHUB_TOKEN, whose events never trigger
+            # CI, so a tag-triggered publish would silently never run. First
+            # main build after a release mints it; the registry check makes
+            # it immutable thereafter.
+            ver="v$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
+            if docker manifest inspect "${IMAGE}:${ver}" >/dev/null 2>&1; then
+              echo "::notice::${IMAGE}:${ver} already published — not overwriting"
+            else
+              tags="${tags},${IMAGE}:${ver}"
+            fi
           fi
           echo "tags=${tags}" >> "$GITHUB_OUTPUT"
 

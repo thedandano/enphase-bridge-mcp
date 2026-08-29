@@ -4,6 +4,9 @@ on:
   pull_request:
   push:
     branches: [dev, main]
+    # Kept only as a manual escape hatch (push a tag by hand to re-publish).
+    # release-please's tags are created with GITHUB_TOKEN, whose events never
+    # trigger workflows — so CD mints version tags from main runs instead.
     tags: ["v*"]
 
 jobs:
