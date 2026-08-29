@@ -257,6 +257,20 @@ async def compare_days(date_a: str = "today", date_b: str = "yesterday") -> DayC
 from . import analysis_tools as _analysis_tools  # noqa: E402,F401
 from . import cost_tools as _cost_tools  # noqa: E402,F401
 
+
+@server.custom_route("/healthz", methods=["GET"])
+async def _healthz(_request: Request) -> JSONResponse:
+    """Liveness probe for Docker/proxy healthchecks; never calls the bridge.
+
+    Registered via `MCPServer.custom_route` rather than `app.add_route` so the
+    route survives into the *fresh* Starlette app that `MCPServer.run()`
+    builds internally for the real production server (`run_streamable_http_async`
+    calls `streamable_http_app()` again at that point) — not just the
+    module-level `app` object below, which only backs the test suite.
+    """
+    return JSONResponse({"status": "ok"})
+
+
 app: Starlette = server.streamable_http_app(stateless_http=True)
 
 
