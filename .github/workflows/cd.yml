@@ -15,8 +15,14 @@ jobs:
     name: Publish image
     if: |
       github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
       (github.event.workflow_run.head_branch == 'main' ||
        startsWith(github.event.workflow_run.head_branch, 'v'))
+    # head_repository check above is required: workflow_run also fires for CI
+    # runs triggered by pull_request from forks, and head_branch alone (e.g.
+    # a fork PR branch literally named "main") is not enough to prove the
+    # code came from this repo. Without it, a fork PR could get its code
+    # built and pushed to GHCR using this job's packages:write token.
     runs-on: ubuntu-latest
     permissions:
       contents: read
