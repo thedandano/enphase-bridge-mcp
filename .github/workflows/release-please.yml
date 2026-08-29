@@ -13,3 +13,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
+        id: release
+
+      # The TOML extra-file updater cannot target uv.lock's package array, so
+      # the lockfile is regenerated on the release branch here instead. Without
+      # this, every release commit ships a stale uv.lock and fails the
+      # `uv lock --check` CI gate.
+      - if: ${{ steps.release.outputs.prs_created == 'true' }}
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+
+      - if: ${{ steps.release.outputs.prs_created == 'true' }}
+        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
+
+      - if: ${{ steps.release.outputs.prs_created == 'true' }}
+        name: Sync uv.lock with the released version
+        run: |
+          uv lock
+          if ! git diff --quiet uv.lock; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add uv.lock
+            git commit -m "chore: sync uv.lock with release version"
+            git push
+          fi

@@ -5,11 +5,9 @@
       "release-type": "python",
       "package-name": "enphase-bridge-mcp",
       "include-component-in-tag": false,
-      "release-as": "1.0.0",
       "extra-files": [
         { "type": "json", "path": ".claude-plugin/plugin.json", "jsonpath": "$.version" },
-        { "type": "json", "path": ".claude-plugin/marketplace.json", "jsonpath": "$.plugins[0].version" },
-        { "type": "toml", "path": "uv.lock", "jsonpath": "$.package[?(@.name=='enphase-bridge-mcp')].version" }
+        { "type": "json", "path": ".claude-plugin/marketplace.json", "jsonpath": "$.plugins[0].version" }
       ]
     }
   }
