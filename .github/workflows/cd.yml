@@ -1,0 +1,111 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    # No branch filter — tag-triggered CI runs have head_branch == the tag
+    # name (e.g. v1.1.0), which a branches filter would reject.
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+# Serialize ALL publishes, not just per-SHA: concurrent CD runs for
+# different commits could otherwise interleave and publish out of order.
+# Queued runs re-check the main tip before touching `latest` (below).
+concurrency:
+  group: cd-publish
+
+jobs:
+  publish:
+    name: Publish image
+    if: |
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      (github.event.workflow_run.head_branch == 'main' ||
+       startsWith(github.event.workflow_run.head_branch, 'v'))
+    # event == 'push' restricts publishing to CI runs from pushes (main, dev,
+    # v* tags per ci.yml) — without it, a same-repo PR whose branch name
+    # starts with "v" (e.g. validate-x) would publish unreviewed code.
+    # head_repository check is required too: workflow_run also fires for CI
+    # runs triggered by pull_request from forks, and head_branch alone (e.g.
+    # a fork PR branch literally named "main") is not enough to prove the
+    # code came from this repo. Without it, a fork PR could get its code
+    # built and pushed to GHCR using this job's packages:write token.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute tags
+        id: tags
+        env:
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          tags="${IMAGE}:${HEAD_SHA:0:7}"
+          if [[ "${HEAD_BRANCH}" == v* ]]; then
+            # Manual tag push (escape hatch): publish the version tag only.
+            # Never `latest` — a re-push of an old release must not roll
+            # deployments back.
+            tags="${tags},${IMAGE}:${HEAD_BRANCH}"
+          else
+            # Mint the vX.Y.Z image tag from pyproject.toml. release-please
+            # creates git tags with GITHUB_TOKEN, whose events never trigger
+            # CI, so a tag-triggered publish would silently never run. Only
+            # mint when the git tag points at the exact commit being built:
+            # every post-release commit still carries the released version in
+            # pyproject.toml, and must not fill in (or move) that image tag.
+            ver="v$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
+            if [[ "$(git ls-remote origin "refs/tags/${ver}" | cut -f1)" == "${HEAD_SHA}" ]]; then
+              tags="${tags},${IMAGE}:${ver}"
+            else
+              echo "::notice::not minting ${ver} — git tag absent or points at a different commit"
+            fi
+          fi
+          # `latest` is deliberately NOT computed here: the tip-of-main check
+          # must happen after the (slow) build, not minutes before it — see
+          # the retag step below.
+          echo "tags=${tags}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Point latest at this build
+        if: github.event.workflow_run.head_branch == 'main'
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        # The check-then-act gap: deciding `latest` before the multi-arch
+        # build leaves minutes for a newer commit's (faster) run to publish
+        # first and then be overwritten. So decide at the last instant —
+        # re-check the tip AFTER the build and retag the already-pushed
+        # manifest, an instant metadata copy with no rebuild.
+        run: |
+          set -euo pipefail
+          if [[ "$(git ls-remote origin refs/heads/main | cut -f1)" == "${HEAD_SHA}" ]]; then
+            docker buildx imagetools create -t "${IMAGE}:latest" "${IMAGE}:${HEAD_SHA:0:7}"
+          else
+            echo "::notice::skipping latest — ${HEAD_SHA:0:7} is no longer the tip of main"
+          fi
