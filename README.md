@@ -138,24 +138,27 @@ hostname the proxy serves.
 | `ENPHASE_MCP_PORT` | `8000` | Port the MCP server binds |
 | `ENPHASE_MCP_ALLOWED_HOSTS` | empty | Comma-separated Host headers to accept (required when clients aren't loopback) |
 
-### Point the plugin at your server
+### Point your client at your server
 
-The bundled plugin connects to `http://127.0.0.1:8000/mcp` by default. To
-point it at your homelab server instead, run this once (swap in your own
-URL), then open a new terminal:
+The bundled plugin connects to `http://127.0.0.1:8000/mcp` — a server on
+your own machine. (The URL is a literal on purpose: Codex does not expand
+`${VAR}` placeholders in MCP configs, so an env-var default would ship a
+server that can never connect there.)
+
+Running the server in your homelab instead? Register the URL with your
+client directly — one command each, run once (swap in your own URL):
 
 ```bash
-# macOS / zsh (the default shell)
-echo 'export ENPHASE_MCP_URL=http://<mcp-host>/mcp' >> ~/.zshrc && source ~/.zshrc
+# Claude Code
+claude mcp add --transport http --scope user enphase-solar http://<mcp-host>/mcp
+
+# Codex
+codex mcp add enphase-solar --url http://<mcp-host>/mcp
 ```
 
-```bash
-# Linux / bash
-echo 'export ENPHASE_MCP_URL=http://<mcp-host>/mcp' >> ~/.bashrc && source ~/.bashrc
-```
-
-That saves the setting permanently — every future Claude Code or Codex
-session picks it up automatically.
+The plugin's bundled `127.0.0.1` server entry will simply show as not
+connected unless something is listening locally — that's expected and
+harmless; the `enphase-solar` entry you registered carries the tools.
 
 ## Warning
 
