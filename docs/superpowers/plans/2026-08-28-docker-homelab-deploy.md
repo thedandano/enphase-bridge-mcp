@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship enphase-bridge-mcp as a Docker container that lives in the homelab behind the existing reverse proxy, so MCP clients call a stable URL (`http://enphase-mcp.home/mcp`) instead of a shell on the laptop.
+**Goal:** Ship enphase-bridge-mcp as a Docker container that lives in the homelab behind the existing reverse proxy, so MCP clients call a stable URL (`http://<mcp-host>/mcp`) instead of a shell on the laptop.
 
-**Architecture:** Multi-stage uv Docker build → GHCR image published by a CI-gated CD workflow (mirrors the enphase-bridge repo's pattern) → a service block appended to Dan's existing homelab compose file (README carries the snippet; no compose file in this repo) → reverse proxy entry `enphase-mcp.home` → the marketplace plugin's `.mcp.json` reads the URL from `ENPHASE_MCP_URL` (neutral localhost default — no private hostname in the public repo). The server code itself barely changes: one `/healthz` route for the Docker healthcheck.
+**Architecture:** Multi-stage uv Docker build → GHCR image published by a CI-gated CD workflow (mirrors the enphase-bridge repo's pattern) → a service block appended to Dan's existing homelab compose file (README carries the snippet; no compose file in this repo) → reverse proxy entry `<mcp-host>` → the marketplace plugin's `.mcp.json` reads the URL from `ENPHASE_MCP_URL` (neutral localhost default — no private hostname in the public repo). The server code itself barely changes: one `/healthz` route for the Docker healthcheck.
 
 **Tech Stack:** Python 3.14, uv, mcp==2.0.0b1 (stateless streamable HTTP), Docker buildx (amd64+arm64), GitHub Actions → GHCR.
 
@@ -18,7 +18,7 @@
 - Feature branch off `dev`, PR into `dev`. No pushes to `main` except via PR.
 - CI gates stay intact: ruff, mypy, bandit, pip-audit, pytest ≥80% coverage, behave. No bypassing.
 - Do NOT edit `.claude-plugin/plugin.json` / `marketplace.json` versions by hand — release-please owns them.
-- Homelab facts: bridge is reachable at `http://enphase-api.home` (proxy, port 80). The proxy admin UI is manual — Dan adds proxy hosts himself.
+- Homelab facts: bridge is reachable at `http://<bridge-host>` (proxy, port 80). The proxy admin UI is manual — Dan adds proxy hosts himself.
 
 ## Design References — Google's stateless MCP guidance
 
@@ -31,7 +31,7 @@ Source: [Scaling AI agent infrastructure with the MCP stateless updates](https:/
 | Spec / SDK: MCP `2026-07-28` via `mcp==2.0.0b1` (Global Constraints) | Deploy against the "2026-07-28 Model Context Protocol specification release candidate." |
 | Any replica can serve any request → `restart: unless-stopped`, no volumes, no sticky anything (Task 5 compose snippet) | "Any container instance can handle any incoming request, you can throw your … MCP servers behind a plain round-robin load balancer" — no session affinity rules. |
 | `/healthz` liveness route + Docker `HEALTHCHECK` (Tasks 2–3) | Statelessness makes "pod restarts, rollouts, and autoscaling events … completely invisible to the client" — but only if the platform can detect a dead instance and restart/replace it; a health probe is what makes that automatic. |
-| Plain reverse proxy (`enphase-mcp.home`) in front, no MCP-aware gateway needed (Task 6) | Standard `Mcp-*` headers let proxies route "without inspecting the request body" — an ordinary HTTP proxy is enough. |
+| Plain reverse proxy (`<mcp-host>`) in front, no MCP-aware gateway needed (Task 6) | Standard `Mcp-*` headers let proxies route "without inspecting the request body" — an ordinary HTTP proxy is enough. |
 
 Deliberately simplified for a homelab: one replica instead of an autoscaled fleet, and no scale-to-zero — the article's economics (idle cost, load-balancing tax) don't bite at N=1. The design still permits both: nothing in the container prevents running two replicas behind the same proxy tomorrow.
 
@@ -243,7 +243,7 @@ Notes for the implementer:
 ```bash
 docker build -t enphase-bridge-mcp:local .
 docker run -d --rm --name mcp-smoke -p 18000:8000 \
-  -e ENPHASE_MCP_BRIDGE_URL=http://enphase-api.home \
+  -e ENPHASE_MCP_BRIDGE_URL=http://<bridge-host> \
   -e ENPHASE_MCP_ALLOWED_HOSTS=localhost:18000,127.0.0.1:18000 \
   enphase-bridge-mcp:local
 sleep 3
@@ -390,7 +390,7 @@ git commit -m "feat: publish multi-arch image to GHCR after green CI"
 - Modify: `README.md`
 
 **Interfaces:**
-- Consumes: the proxy hostname `enphase-mcp.home` (Task 6 creates the proxy entry).
+- Consumes: the proxy hostname `<mcp-host>` (Task 6 creates the proxy entry).
 - Produces: each installer points the plugin at their own server via `ENPHASE_MCP_URL`; the shipped default is neutral `localhost` — this is a public repo, no private homelab hostname gets baked in.
 
 - [ ] **Step 1: Update `.mcp.json`**
@@ -406,7 +406,7 @@ git commit -m "feat: publish multi-arch image to GHCR after green CI"
 }
 ```
 
-(Claude Code expands `${VAR:-default}` in `.mcp.json`. Verify Codex tolerates it: `codex plugin marketplace add` this repo locally and list tools; if Codex chokes on the syntax, hardcode `http://localhost:8000/mcp` and document the override in README instead. Dan then sets `ENPHASE_MCP_URL=http://enphase-mcp.home/mcp` in his shell profile — his homelab hostname never enters the repo.)
+(Claude Code expands `${VAR:-default}` in `.mcp.json`. Verify Codex tolerates it: `codex plugin marketplace add` this repo locally and list tools; if Codex chokes on the syntax, hardcode `http://localhost:8000/mcp` and document the override in README instead. Dan then sets `ENPHASE_MCP_URL=http://<mcp-host>/mcp` in his shell profile — his homelab hostname never enters the repo.)
 
 - [ ] **Step 2: README — add a "Deploy in your homelab" section**
 
@@ -428,10 +428,10 @@ Append this service to your existing `docker-compose.yml`:
       - "8000:8000"
     environment:
       # Where the enphase-bridge REST API lives (via the reverse proxy).
-      ENPHASE_MCP_BRIDGE_URL: http://enphase-api.home
+      ENPHASE_MCP_BRIDGE_URL: http://<bridge-host>
       # Host headers the MCP transport accepts (DNS-rebinding protection).
       # Must list every name clients use to reach this container.
-      ENPHASE_MCP_ALLOWED_HOSTS: enphase-mcp.home,enphase-mcp.home:80
+      ENPHASE_MCP_ALLOWED_HOSTS: <mcp-host>,<mcp-host>:80
     # If your reverse proxy runs in Docker, delete `ports`, join the proxy's
     # network, and point the proxy at enphase-mcp:8000 instead.
 ```
@@ -441,7 +441,7 @@ docker compose up -d enphase-mcp
 curl -fs http://localhost:8000/healthz   # {"status":"ok"}
 ```
 
-Then add a reverse-proxy entry (e.g. `enphase-mcp.home` → `<host>:8000`) and
+Then add a reverse-proxy entry (e.g. `<mcp-host>` → `<host>:8000`) and
 keep `ENPHASE_MCP_ALLOWED_HOSTS` in the compose file in sync with the
 hostname the proxy serves.
 
@@ -461,12 +461,12 @@ URL), then open a new terminal:
 
 ```bash
 # macOS / zsh (the default shell)
-echo 'export ENPHASE_MCP_URL=http://enphase-mcp.home/mcp' >> ~/.zshrc && source ~/.zshrc
+echo 'export ENPHASE_MCP_URL=http://<mcp-host>/mcp' >> ~/.zshrc && source ~/.zshrc
 ```
 
 ```bash
 # Linux / bash
-echo 'export ENPHASE_MCP_URL=http://enphase-mcp.home/mcp' >> ~/.bashrc && source ~/.bashrc
+echo 'export ENPHASE_MCP_URL=http://<mcp-host>/mcp' >> ~/.bashrc && source ~/.bashrc
 ```
 
 That saves the setting permanently — every future Claude Code or Codex
@@ -480,7 +480,7 @@ The only file the install paths depend on that this PR touches is `.mcp.json` (t
 Claude Code (from a directory OUTSIDE this repo, so the project-scope `.mcp.json` doesn't mask the plugin):
 
 ```bash
-claude plugin marketplace add /Users/dandano/workplace/enphase-bridge-mcp
+claude plugin marketplace add ~/workplace/enphase-bridge-mcp
 claude plugin install enphase-bridge@enphase-plugins
 # In a claude session: /mcp must list the enphase server, and with no
 # ENPHASE_MCP_URL set the URL must resolve to http://localhost:8000/mcp.
@@ -491,7 +491,7 @@ claude plugin install enphase-bridge@enphase-plugins
 Codex:
 
 ```bash
-codex plugin marketplace add /Users/dandano/workplace/enphase-bridge-mcp
+codex plugin marketplace add ~/workplace/enphase-bridge-mcp
 codex plugin list   # must show enphase-bridge, NOT 0 plugins
 # Start codex, confirm the enphase MCP server connects (with ENPHASE_MCP_URL
 # exported). If codex leaves ${ENPHASE_MCP_URL:-...} unexpanded / errors,
@@ -545,13 +545,13 @@ docker pull ghcr.io/thedandano/enphase-bridge-mcp:latest
 
 - [ ] **Step 3: Deploy on the homelab host — MANUAL, Dan's machine**
 
-On the homelab box: append the README's service block to the existing all-containers compose file, `docker compose up -d enphase-mcp`, then add the proxy host **enphase-mcp.home → <homelab-host>:8000** in the proxy admin UI (same place `enphase-api.home` lives). This proxy step cannot be automated from here — hand it to Dan explicitly.
+On the homelab box: append the README's service block to the existing all-containers compose file, `docker compose up -d enphase-mcp`, then add the proxy host **<mcp-host> → <homelab-host>:8000** in the proxy admin UI (same place `<bridge-host>` lives). This proxy step cannot be automated from here — hand it to Dan explicitly.
 
 - [ ] **Step 4: End-to-end verification**
 
 ```bash
-curl -fs http://enphase-mcp.home/healthz
-curl -fs -X POST http://enphase-mcp.home/mcp \
+curl -fs http://<mcp-host>/healthz
+curl -fs -X POST http://<mcp-host>/mcp \
   -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | head -c 400
 ```
