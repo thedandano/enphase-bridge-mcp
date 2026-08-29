@@ -10,15 +10,25 @@ on:
 env:
   IMAGE: ghcr.io/${{ github.repository }}
 
+# One publish at a time per commit: a release merge pushes main and the
+# vX.Y.Z tag at the same SHA, and both green CI runs would otherwise race
+# each other rebuilding and re-pushing :latest concurrently.
+concurrency:
+  group: cd-${{ github.event.workflow_run.head_sha }}
+
 jobs:
   publish:
     name: Publish image
     if: |
       github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
       (github.event.workflow_run.head_branch == 'main' ||
        startsWith(github.event.workflow_run.head_branch, 'v'))
-    # head_repository check above is required: workflow_run also fires for CI
+    # event == 'push' restricts publishing to CI runs from pushes (main, dev,
+    # v* tags per ci.yml) — without it, a same-repo PR whose branch name
+    # starts with "v" (e.g. validate-x) would publish unreviewed code.
+    # head_repository check is required too: workflow_run also fires for CI
     # runs triggered by pull_request from forks, and head_branch alone (e.g.
     # a fork PR branch literally named "main") is not enough to prove the
     # code came from this repo. Without it, a fork PR could get its code
