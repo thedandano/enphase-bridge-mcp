@@ -1,0 +1,17 @@
+.git
+.github
+.venv
+.claude
+.claude-plugin
+.serena
+.remember
+docs
+skills
+tests
+features
+htmlcov
+.pytest_cache
+.mypy_cache
+.ruff_cache
+*.md
+!README.md
