@@ -18,6 +18,8 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from .bridge_client import BridgeClient
 from .config import Settings
@@ -256,6 +258,14 @@ from . import analysis_tools as _analysis_tools  # noqa: E402,F401
 from . import cost_tools as _cost_tools  # noqa: E402,F401
 
 app: Starlette = server.streamable_http_app(stateless_http=True)
+
+
+async def _healthz(_request: Request) -> JSONResponse:
+    """Liveness probe for Docker/proxy healthchecks; never calls the bridge."""
+    return JSONResponse({"status": "ok"})
+
+
+app.add_route("/healthz", _healthz, methods=["GET"])
 
 
 def _transport_security(settings: Settings) -> TransportSecuritySettings | None:
