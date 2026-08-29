@@ -140,7 +140,7 @@ hostname the proxy serves.
 
 ### Point the plugin at your server
 
-The bundled plugin connects to `http://localhost:8000/mcp` by default. To
+The bundled plugin connects to `http://127.0.0.1:8000/mcp` by default. To
 point it at your homelab server instead, run this once (swap in your own
 URL), then open a new terminal:
 
