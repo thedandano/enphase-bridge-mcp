@@ -5,6 +5,7 @@
 .claude-plugin
 .serena
 .remember
+.env
 docs
 skills
 tests
