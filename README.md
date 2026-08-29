@@ -98,6 +98,65 @@ another non-loopback address) to serve LAN clients, also set `ENPHASE_MCP_ALLOWE
 `Host` header value(s) those clients will send — there is no wildcard fallback, only the hosts you list
 are accepted.
 
+## Deploy in your homelab (Docker)
+
+The server is stateless — run it as a container near your enphase-bridge and
+point every MCP client at one URL. Nothing runs on your laptop.
+
+Append this service to your existing `docker-compose.yml`:
+
+```yaml
+  enphase-mcp:
+    image: ghcr.io/thedandano/enphase-bridge-mcp:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # Where the enphase-bridge REST API lives (via the reverse proxy).
+      ENPHASE_MCP_BRIDGE_URL: http://<bridge-host>
+      # Host headers the MCP transport accepts (DNS-rebinding protection).
+      # Must list every name clients use to reach this container.
+      ENPHASE_MCP_ALLOWED_HOSTS: <mcp-host>,<mcp-host>:80
+    # If your reverse proxy runs in Docker, delete `ports`, join the proxy's
+    # network, and point the proxy at enphase-mcp:8000 instead.
+```
+
+```bash
+docker compose up -d enphase-mcp
+curl -fs http://localhost:8000/healthz   # {"status":"ok"}
+```
+
+Then add a reverse-proxy entry (e.g. `<mcp-host>` → `<host>:8000`) and
+keep `ENPHASE_MCP_ALLOWED_HOSTS` in the compose file in sync with the
+hostname the proxy serves.
+
+| Env var | Default | Meaning |
+| --- | --- | --- |
+| `ENPHASE_MCP_BRIDGE_URL` | `http://localhost:8080` | Where the enphase-bridge REST API lives |
+| `ENPHASE_MCP_BRIDGE_API_KEY` | unset | Bearer token, if your bridge requires one |
+| `ENPHASE_MCP_HOST` | `0.0.0.0` (in the image) | Interface the MCP server binds |
+| `ENPHASE_MCP_PORT` | `8000` | Port the MCP server binds |
+| `ENPHASE_MCP_ALLOWED_HOSTS` | empty | Comma-separated Host headers to accept (required when clients aren't loopback) |
+
+### Point the plugin at your server
+
+The bundled plugin connects to `http://localhost:8000/mcp` by default. To
+point it at your homelab server instead, run this once (swap in your own
+URL), then open a new terminal:
+
+```bash
+# macOS / zsh (the default shell)
+echo 'export ENPHASE_MCP_URL=http://<mcp-host>/mcp' >> ~/.zshrc && source ~/.zshrc
+```
+
+```bash
+# Linux / bash
+echo 'export ENPHASE_MCP_URL=http://<mcp-host>/mcp' >> ~/.bashrc && source ~/.bashrc
+```
+
+That saves the setting permanently — every future Claude Code or Codex
+session picks it up automatically.
+
 ## Warning
 
 This project pins `mcp==2.0.0b1`, a **pre-release** of the MCP Python SDK. Its API may change in
