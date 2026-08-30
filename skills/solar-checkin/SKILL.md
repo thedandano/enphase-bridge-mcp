@@ -11,6 +11,7 @@ Answer with real numbers from the enphase MCP tools — never estimate or invent
 
 1. Call `get_current_status` — always, when the question involves "now" or today.
 2. Also call `compare_days` (defaults: today vs yesterday) when the user implies a comparison ("how am I doing", "vs yesterday", "better than").
+   **Partial-day rule**: while today is still in progress, today-vs-yesterday is an unfair comparison (a partial day against a full one). Never conclude production is "down X%" mid-day. Present yesterday's final total as a reference ("15.7 kWh so far · yesterday finished at 22.3 kWh") and, if a verdict is wanted, frame it as pace ("on pace to match yesterday"), noting the day isn't over. The raw percent delta from the tool may only be stated once today is complete.
 3. For a specific past day ("yesterday", "last Tuesday"), call `get_daily_summary(date)` instead of `get_current_status` — there is no "right now" for a finished day, so use only the 📊 line of the template, with the resolved day as its label (e.g. `📊 Yesterday (2026-08-27): ...`), never the word "Today".
 
 ## Reading the data correctly
@@ -26,7 +27,7 @@ ALWAYS use this exact template (drop the bracketed parts when not applicable):
 
 ```
 ☀️ Right now: <X> W producing · <Y> W using · <sending Z W to grid | drawing Z W from grid>
-📊 Today: <A> kWh produced · <B> kWh used [ · vs yesterday: <±C> kWh (<±D>%) ]
+📊 Today so far: <A> kWh produced · <B> kWh used [ · yesterday finished at <Y> kWh ]
 ⚠️ <only if applicable: stale-data or partial-data caveat, one line>
 ```
 
