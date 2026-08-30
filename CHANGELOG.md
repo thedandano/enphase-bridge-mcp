@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.1.1](https://github.com/thedandano/enphase-bridge-mcp/compare/v1.1.0...v1.1.1) (2026-08-30)
+
+
+### Bug Fixes
+
+* exclude out-of-range windows from period totals; harden report comparison wording ([6ad5dbb](https://github.com/thedandano/enphase-bridge-mcp/commit/6ad5dbb145210e9fe72a583e6cc235b802d21aa9))
+* flag negative consumption even when power channels balance ([f1e9f4e](https://github.com/thedandano/enphase-bridge-mcp/commit/f1e9f4e206505b3bd58974efba7cde74d38a9039))
+* flag physically impossible live power readings ([7ec881c](https://github.com/thedandano/enphase-bridge-mcp/commit/7ec881cf47565fa6544ea069bc7d5b3fd69b22ff))
+* flag physically impossible live power readings ([5e90b24](https://github.com/thedandano/enphase-bridge-mcp/commit/5e90b24950b344944262cb157cf4eb38e7a166ef)), closes [#24](https://github.com/thedandano/enphase-bridge-mcp/issues/24)
+* handle in-progress periods honestly (partial-day comparisons, null period stats) ([9563f6c](https://github.com/thedandano/enphase-bridge-mcp/commit/9563f6c461c45ed98cfcb40d1dfc80fe7bae1295))
+* handle in-progress periods honestly in tools and skills ([e5bef97](https://github.com/thedandano/enphase-bridge-mcp/commit/e5bef97861c69d608a62a7302af69405251847a1)), closes [#23](https://github.com/thedandano/enphase-bridge-mcp/issues/23) [#28](https://github.com/thedandano/enphase-bridge-mcp/issues/28)
+* **skills:** catch-all error outcome explicitly skips the diagnosis template ([1137169](https://github.com/thedandano/enphase-bridge-mcp/commit/1137169119d8865ccac0c6d77e2bdc9b54b5b2fc))
+* **skills:** close troubleshoot decision-table gaps from review ([d4322fc](https://github.com/thedandano/enphase-bridge-mcp/commit/d4322fcbb8c2c9e9698236c1480ecd933a6f12bd))
+* **skills:** cover refresh failure, user-fixable savings errors, failed optional comparison ([60cb457](https://github.com/thedandano/enphase-bridge-mcp/commit/60cb457a65bfc13746bba8ae0335c46b8a836d2d))
+* **skills:** homeowner-safe fallback when bridge is offline or has no data ([dffe735](https://github.com/thedandano/enphase-bridge-mcp/commit/dffe735e4da4402f2dfcdeb4bcc5917c97f6fea8))
+* **skills:** homeowner-safe fallback when the bridge is offline or has no data ([c0d5158](https://github.com/thedandano/enphase-bridge-mcp/commit/c0d51584f939bef04b43a05993b9ba6323ee1e72)), closes [#26](https://github.com/thedandano/enphase-bridge-mcp/issues/26)
+* **skills:** name gap dates only when the breakdown identifies them ([d540034](https://github.com/thedandano/enphase-bridge-mcp/commit/d54003412dc998c8dcc7be6fdfa20007badbb938))
+* **skills:** safer solar-troubleshoot diagnosis (agreeing signals, daylight rule) ([f9605f1](https://github.com/thedandano/enphase-bridge-mcp/commit/f9605f1774138f48ef9c4544069797a948aa396e))
+* **skills:** savings never invents TOU hours; refresh needs explicit consent ([2aca5c8](https://github.com/thedandano/enphase-bridge-mcp/commit/2aca5c8f6cca8c9ada190e79c4b7208528b0b285)), closes [#31](https://github.com/thedandano/enphase-bridge-mcp/issues/31)
+* **skills:** solar-savings TOU guardrails (no invented hours, consented refresh, provenance) ([bb70efb](https://github.com/thedandano/enphase-bridge-mcp/commit/bb70efb6daee13f79dbae9d9d0e5e1485acc1054))
+* **skills:** template hardening — historical day, zero baselines, gap naming, copy ([c0fffa4](https://github.com/thedandano/enphase-bridge-mcp/commit/c0fffa4421d8fed260ef1fcf112b1c1d302f1fd1)), closes [#27](https://github.com/thedandano/enphase-bridge-mcp/issues/27) [#29](https://github.com/thedandano/enphase-bridge-mcp/issues/29) [#30](https://github.com/thedandano/enphase-bridge-mcp/issues/30) [#33](https://github.com/thedandano/enphase-bridge-mcp/issues/33)
+* **skills:** template hardening across check-in, report, and savings ([f905684](https://github.com/thedandano/enphase-bridge-mcp/commit/f905684d54eb70845e165560d61af9c47f85ef82))
+* **skills:** troubleshoot judges production from finished days; catch-all error outcome ([3956985](https://github.com/thedandano/enphase-bridge-mcp/commit/3956985ff2ceeaa203ccbec65c6cf51633e20bd5))
+* **skills:** troubleshoot requires agreeing signals and daylight-aware diagnosis ([fd6894f](https://github.com/thedandano/enphase-bridge-mcp/commit/fd6894f3652cde602e5e2aca61e294125ad60f23)), closes [#32](https://github.com/thedandano/enphase-bridge-mcp/issues/32)
+* **skills:** user-fixable report errors (92-day cap, bad dates) keep their own guidance ([5c07ce2](https://github.com/thedandano/enphase-bridge-mcp/commit/5c07ce20073f98b125caa841f86546e7e92697a8))
+* tool docstrings align with consented TOU refresh ([2d1f892](https://github.com/thedandano/enphase-bridge-mcp/commit/2d1f89225e4ece38c4536cca8b45e5c30ecb365f))
+
+
+### Documentation
+
+* lead README with what it does, then install, then dependencies ([b473ac7](https://github.com/thedandano/enphase-bridge-mcp/commit/b473ac7621907c1cc56c0ad2afff5bacba1f4fc1)), closes [#25](https://github.com/thedandano/enphase-bridge-mcp/issues/25)
+* reorder README for public readers ([121ba7b](https://github.com/thedandano/enphase-bridge-mcp/commit/121ba7ba30f9991b07c33a91def336fc964d1732))
+
 ## [1.1.0](https://github.com/thedandano/enphase-bridge-mcp/compare/v1.0.0...v1.1.0) (2026-08-29)
 
 
