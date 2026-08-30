@@ -133,30 +133,31 @@ def _is_today(date_spec: str, now: datetime) -> bool:
     return start_utc == today_start_utc
 
 
-def _equal_elapsed_cutoff(date_spec: str, now: datetime) -> datetime:
-    """UTC instant on `date_spec`'s Pacific day, the same elapsed time into that
-    day as `now` is into today.
+def _equal_span_cutoffs(other_spec: str, now: datetime) -> tuple[datetime, datetime]:
+    """End cutoffs `(today, other_spec)` covering an identical duration from each
+    day's own Pacific midnight.
 
-    Used by `compare_days`' `same_time_of_day` option to truncate a complete day
-    so it covers the same *duration* since Pacific midnight as an in-progress
-    "today" — e.g. 14h into today compares against the first 14h of `date_spec`.
+    Used by `compare_days`' `same_time_of_day` option so an in-progress "today"
+    and a complete day are compared over the same span — e.g. 14h into today
+    compares the first 14h of each.
 
-    Equal duration is the point: the figures being compared are accumulated kWh,
-    so a comparison is only fair if both sides cover the same number of minutes.
+    Equal duration is the guarantee, not equal wall-clock time: the compared
+    figures are accumulated kWh, so a comparison is only fair if both sides
+    cover the same number of minutes.
 
-    DST is handled by construction rather than by special case. The cutoff is
-    computed as `other_midnight + (now - today_midnight)` in UTC, so it never
-    builds a local wall-clock time and can never land in a spring-forward gap or
-    a fall-back repeated hour. On the 363 ordinary days a year this is identical
-    to matching the wall clock; on a transition day it stays duration-exact,
-    which is what the kWh comparison actually needs. The result is clamped to
-    the target day's end, since a 25-hour fall-back "today" can otherwise elapse
-    past the end of a 24-hour comparison day.
+    DST is handled by construction rather than by special case. Cutoffs are
+    computed as `midnight + shared_span` in UTC, so neither can land in a
+    spring-forward gap or a fall-back repeated hour. The shared span is the
+    lesser of today's elapsed time and the other day's full length, and BOTH
+    cutoffs use it — so on the one hour a year when a 25-hour fall-back today
+    has outlasted a 24-hour comparison day, today is trimmed to match rather
+    than being left longer. On ordinary days the shared span is simply today's
+    elapsed time and today's cutoff is `now`, leaving behaviour unchanged.
     """
-    other_start_utc, other_end_utc = pacific_day_bounds(date_spec, now=now)
+    other_start_utc, other_end_utc = pacific_day_bounds(other_spec, now=now)
     today_start_utc, _ = pacific_day_bounds("today", now=now)
-    elapsed = now - today_start_utc
-    return min(other_start_utc + elapsed, other_end_utc)
+    shared_span = min(now - today_start_utc, other_end_utc - other_start_utc)
+    return today_start_utc + shared_span, other_start_utc + shared_span
 
 
 def _pct_diff(a: float, b: float) -> float:
@@ -328,9 +329,12 @@ async def compare_days(
     cover an equal span — e.g. 14h into today, today-vs-yesterday compares
     the first 14h of each day, making the percent deltas a fair like-for-like
     comparison instead of partial-day-vs-full-day. Equal *duration* is the
-    guarantee (both windows cover the same number of minutes), which on the
-    two annual DST transition days differs slightly from matching the wall
-    clock; duration is what a cumulative-kWh comparison requires.
+    guarantee (both windows always cover the same number of minutes), which on
+    the two annual DST transition days differs slightly from matching the wall
+    clock; duration is what a cumulative-kWh comparison requires. If today has
+    already outlasted the comparison day — possible only in the final hour of a
+    25-hour fall-back day — today is trimmed to the shorter day's length so the
+    spans still match.
 
     `same_time_of_day` is a no-op whenever there is no partial day to match:
     when neither date is today, and also when BOTH resolve to today (e.g.
@@ -347,9 +351,9 @@ async def compare_days(
             a_is_today = _is_today(date_a, now)
             b_is_today = _is_today(date_b, now)
             if a_is_today and not b_is_today:
-                end_override_b = _equal_elapsed_cutoff(date_b, now)
+                end_override_a, end_override_b = _equal_span_cutoffs(date_b, now)
             elif b_is_today and not a_is_today:
-                end_override_a = _equal_elapsed_cutoff(date_a, now)
+                end_override_b, end_override_a = _equal_span_cutoffs(date_a, now)
         day_a = await _build_daily_summary(client, date_a, now, end_override=end_override_a)
         day_b = await _build_daily_summary(client, date_b, now, end_override=end_override_b)
     except ValueError as exc:

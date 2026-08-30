@@ -485,22 +485,22 @@ async def test_compare_days_same_time_of_day_noop_when_both_days_complete(
 # --- compare_days: DST correctness of the cutoff -------------------------------------
 
 
-def _elapsed_on_both_sides(date_spec: str, now: datetime) -> tuple[timedelta, timedelta]:
-    """(elapsed into today, span covered on `date_spec`) for the cutoff at `now`."""
-    from enphase_bridge_mcp.server import _equal_elapsed_cutoff
+def _spans_on_both_sides(date_spec: str, now: datetime) -> tuple[timedelta, timedelta]:
+    """(span covered on today, span covered on `date_spec`) for the cutoffs at `now`."""
+    from enphase_bridge_mcp.server import _equal_span_cutoffs
 
     today_start, _ = pacific_day_bounds("today", now=now)
     other_start, _ = pacific_day_bounds(date_spec, now=now)
-    cutoff = _equal_elapsed_cutoff(date_spec, now=now)
-    return now - today_start, cutoff - other_start
+    today_cutoff, other_cutoff = _equal_span_cutoffs(date_spec, now=now)
+    return today_cutoff - today_start, other_cutoff - other_start
 
 
 def test_equal_elapsed_cutoff_is_duration_exact_on_ordinary_day() -> None:
     """The ordinary case: both sides cover the same span, and it matches the wall clock."""
     now = datetime(2026, 6, 15, 21, 0, tzinfo=UTC)  # 14:00 Pacific
-    today_elapsed, other_span = _elapsed_on_both_sides("2026-06-14", now)
+    today_span, other_span = _spans_on_both_sides("2026-06-14", now)
 
-    assert today_elapsed == other_span == timedelta(hours=14)
+    assert today_span == other_span == timedelta(hours=14)
 
 
 def test_equal_elapsed_cutoff_stays_exact_across_spring_forward() -> None:
@@ -509,10 +509,10 @@ def test_equal_elapsed_cutoff_stays_exact_across_spring_forward() -> None:
     and 02:30 Pacific does not exist on that date at all.
     """
     now = datetime(2026, 3, 8, 21, 0, tzinfo=UTC)  # 14:00 PDT, 13h elapsed (not 14)
-    today_elapsed, other_span = _elapsed_on_both_sides("2026-03-07", now)
+    today_span, other_span = _spans_on_both_sides("2026-03-07", now)
 
-    assert today_elapsed == other_span, "spring-forward day must stay duration-exact"
-    assert today_elapsed == timedelta(hours=13), "23-hour day: 14:00 is 13h after midnight"
+    assert today_span == other_span, "spring-forward day must stay duration-exact"
+    assert today_span == timedelta(hours=13), "23-hour day: 14:00 is 13h after midnight"
 
 
 def test_equal_elapsed_cutoff_stays_exact_across_fall_back() -> None:
@@ -522,21 +522,27 @@ def test_equal_elapsed_cutoff_stays_exact_across_fall_back() -> None:
     exact case that made the wall-clock approach wrong.
     """
     second_0130 = datetime(2026, 11, 1, 9, 30, tzinfo=UTC)  # 01:30 PST, the repeat
-    today_elapsed, other_span = _elapsed_on_both_sides("2026-10-31", second_0130)
+    today_span, other_span = _spans_on_both_sides("2026-10-31", second_0130)
 
-    assert today_elapsed == timedelta(minutes=150), "the repeated hour counts as elapsed"
-    assert other_span == today_elapsed, "fall-back must not silently compare 150m against 90m"
+    assert today_span == timedelta(minutes=150), "the repeated hour counts as elapsed"
+    assert other_span == today_span, "fall-back must not silently compare 150m against 90m"
 
 
-def test_equal_elapsed_cutoff_clamps_to_the_target_day_end() -> None:
-    """A 25-hour fall-back "today" can elapse past the end of a 24-hour comparison
-    day; the cutoff must clamp rather than run into the following day.
+def test_equal_span_trims_today_when_it_outlasts_the_comparison_day() -> None:
+    """In the final hour of a 25-hour fall-back day, today can elapse past the
+    length of a 24-hour comparison day. Clamping only the comparison side would
+    leave today longer and quietly break the equal-duration promise, so today is
+    trimmed to the shared span too.
     """
     late = datetime(2026, 11, 2, 7, 59, tzinfo=UTC)  # 23:59 PST on the 25-hour day
-    _, other_end = pacific_day_bounds("2026-10-31", now=late)
-    from enphase_bridge_mcp.server import _equal_elapsed_cutoff
+    today_start, _ = pacific_day_bounds("today", now=late)
+    other_start, other_end = pacific_day_bounds("2026-10-31", now=late)
 
-    assert _equal_elapsed_cutoff("2026-10-31", now=late) <= other_end
+    today_span, other_span = _spans_on_both_sides("2026-10-31", late)
+
+    assert late - today_start > other_end - other_start, "precondition: today is longer"
+    assert today_span == other_span, "both sides must still cover an identical span"
+    assert other_span == other_end - other_start, "the shorter day is covered in full"
 
 
 @respx.mock
