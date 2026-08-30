@@ -12,7 +12,7 @@ Diagnose in a fixed order — the order matters because stale data mimics dead h
 1. `get_inverter_health` — check `data_as_of` FIRST. If it's old, suspect the collector/bridge pipeline, **not the panels** — but don't classify anything yet; a stale snapshot alone proves nothing until step 3 confirms it.
 2. Check `attention_needed` — each entry is a specific offline inverter with its array and last-report time.
 3. `get_current_status` — live confirmation (is_online, current watts). Only now do the two freshness signals together support a classification.
-4. `compare_days` for today-vs-yesterday, or `get_period_summary` over the last ~7 days — size the actual production impact in one call.
+4. Size the actual production impact from **finished days**: `get_period_summary` over the last ~7 days, or `compare_days` between yesterday and a prior day. Today's total is partial — use it only as "so far" context, never as evidence of low production.
 
 ## Daylight rule
 
@@ -23,7 +23,8 @@ Never diagnose "low production" from current watts outside daylight hours — ze
 - **Data pipeline problem**, reached two ways: (a) any tool errors with "Cannot reach enphase-bridge" — the bridge itself is down, no further signals needed; say to check that the bridge service is running. Or (b) BOTH freshness signals agree — `data_as_of` old AND `is_online` false → the collector pipeline is down. Either way the panels are probably fine. If the two freshness signals disagree (one stale, one fresh), say "data freshness is inconsistent; I can't confirm inverter health yet" — don't pick a failure class.
 - **Inverter(s) need attention**: specific serials in `attention_needed` while the rest report fine.
 - **Low production**: all inverters online, output just low **during daylight and across recent full days** — offer weather/season as a possible (not confirmed) explanation before suggesting anything is broken.
-- **Unable to confirm live output**: `get_current_status` errors with "no power samples" while inverter health looks fine → say the live reading is unavailable right now, and judge from daily totals instead — don't guess at the live state. If inverter health is stale AND the live status is erroring too, that's two degraded signals → classify as **data pipeline problem** instead.
+- **Unable to confirm live output**: `get_current_status` errors with "no power samples" while inverter health looks fine → say the live reading is unavailable right now, and judge from daily totals instead — don't guess at the live state. If inverter health is stale AND the live status errors with "no power samples" too, that's two degraded collector signals → classify as **data pipeline problem** instead.
+- **Any other tool error** (e.g. "no inverter array data yet", an HTTP failure, a malformed response): don't force one of the classes above. Say the diagnosis can't run right now because the solar *data* can't be read, that this is a data-access issue and not evidence of a panel fault, and to retry once the bridge is healthy. Never surface the raw error text.
 
 ## Output format
 
