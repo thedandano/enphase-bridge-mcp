@@ -9,23 +9,29 @@ Diagnose in a fixed order — the order matters because stale data mimics dead h
 
 ## Diagnosis recipe (in order)
 
-1. `get_inverter_health` — check `data_as_of` FIRST. If it's old, the collector/bridge pipeline is the problem, **not the panels**; don't report inverters as broken from stale data.
+1. `get_inverter_health` — check `data_as_of` FIRST. If it's old, suspect the collector/bridge pipeline, **not the panels** — but don't classify anything yet; a stale snapshot alone proves nothing until step 3 confirms it.
 2. Check `attention_needed` — each entry is a specific offline inverter with its array and last-report time.
-3. `get_current_status` — live confirmation (is_online, current watts).
-4. `compare_days` for today-vs-yesterday, or `get_period_summary` over the last ~7 days — size the actual production impact in one call.
+3. `get_current_status` — live confirmation (is_online, current watts). Only now do the two freshness signals together support a classification.
+4. Size the actual production impact from **finished days**: `get_period_summary` over the last ~7 days, or `compare_days` between yesterday and a prior day. Today's total is partial — use it only as "so far" context, never as evidence of low production.
+
+## Daylight rule
+
+Never diagnose "low production" from current watts outside daylight hours — zero watts at night is a healthy system. Near dawn or dusk, low watts are expected too; judge production from full-day totals (step 4), not the live number. This skill has no weather source: clouds/shading may be offered as a *possible* explanation, never a confirmed cause.
 
 ## The three failure classes — always name which one applies
 
-- **Data pipeline problem**: everything looks stale (`data_as_of` old, `is_online` false) → the enphase-bridge service or collector is down; the panels are probably fine. If tools error with "Cannot reach enphase-bridge", say to check that the bridge service is running.
+- **Data pipeline problem**, reached two ways: (a) any tool errors with "Cannot reach enphase-bridge" — the bridge itself is down, no further signals needed; say to check that the bridge service is running. Or (b) BOTH freshness signals agree — `data_as_of` old AND `is_online` false → the collector pipeline is down. Either way the panels are probably fine. If the two freshness signals disagree (one stale, one fresh), say "data freshness is inconsistent; I can't confirm inverter health yet" — don't pick a failure class.
 - **Inverter(s) need attention**: specific serials in `attention_needed` while the rest report fine.
-- **Low production**: all inverters online, output just low — check recent days and note weather/season before suggesting anything is broken.
+- **Low production**: all inverters online, output just low **during daylight and across recent full days** — offer weather/season as a possible (not confirmed) explanation before suggesting anything is broken.
+- **Unable to confirm live output**: `get_current_status` errors with "no power samples" while inverter health looks fine → say the live reading is unavailable right now, and judge from daily totals instead — don't guess at the live state. If inverter health is stale AND the live status errors with "no power samples" too, that's two degraded collector signals → classify as **data pipeline problem** instead.
+- **Any other tool error** (e.g. "no inverter array data yet", an HTTP failure, a malformed response): don't force one of the classes above. Say the diagnosis can't run right now because the solar *data* can't be read, that this is a data-access issue and not evidence of a panel fault, and to retry once the bridge is healthy. Never surface the raw error text. **This outcome skips the output template entirely** — that plain-language message is the whole answer (there is no data to fill the template with).
 
 ## Output format
 
 ALWAYS use this exact template (drop bracketed parts when not applicable):
 
 ```
-🔍 Diagnosis: <healthy | data pipeline problem | N inverter(s) need attention | low production>
+🔍 Diagnosis: <healthy | data pipeline problem | N inverter(s) need attention | low production | data freshness inconsistent — can't confirm yet | unable to confirm live output>
 Data freshness: <data_as_of, flagged if stale>
 Arrays: <name>: <online>/<total> online (<watts> W)   (one line per array)
 [ Attention: <serial> in <array> — last reported <when> ]   (one line per flagged inverter)
