@@ -27,6 +27,8 @@ If a tool errors (bridge unreachable, or no energy data for the range), do NOT r
 
 Exception — user-fixable errors keep their own guidance: the over-92-days cap and invalid/reversed dates are request problems, not data problems. Handle those per "Limits and caveats" (split the range, fix the dates) and never present them as a data-connection issue.
 
+If only the **optional** `compare_periods` call fails while the primary `get_period_summary` succeeded, render the report normally and add one line that the comparison is unavailable — never suppress a successful report over a failed comparison.
+
 ## Output format
 
 ALWAYS use this exact template (drop bracketed parts when not applicable):

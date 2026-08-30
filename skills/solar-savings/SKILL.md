@@ -21,7 +21,9 @@ Money answers come from `get_trueup_estimate` — never invent tariffs, projecti
 
 ## When the tools error
 
-If `get_trueup_estimate` errors for any reason other than the "no TOU schedule" bootstrap case (bridge unreachable, no data for the range), do NOT render the money template and do NOT surface the raw error. Say: "I can't reach your solar cost data right now, so I can't estimate the bill. This is a data-connection issue — your solar system and your actual bill are unaffected." Never guess at dollar amounts to fill the gap.
+If `get_trueup_estimate` errors (bridge unreachable, no data for the range) — or the "no TOU schedule" bootstrap refresh itself fails — do NOT render the money template and do NOT surface the raw error. Say: "I can't reach your solar cost data right now, so I can't estimate the bill. This is a data-connection issue — your solar system and your actual bill are unaffected." Never guess at dollar amounts to fill the gap.
+
+Exception — user-fixable errors keep their own guidance: invalid or reversed dates, a range beyond the tool's cap, and known single-day limitations are request problems — say what to fix (correct the dates, narrow the range), never call them a data-connection issue.
 
 ## Output format
 
