@@ -118,6 +118,21 @@ def _pct_diff(a: float, b: float) -> float:
     return round((a - b) / abs(b) * 100, 2)
 
 
+# ponytail: fixed threshold; make configurable if real CT noise ever exceeds it
+_POWER_BALANCE_TOLERANCE_W = 500.0
+
+
+def _power_balance_w(production_w: float, consumption_w: float, grid_w: float) -> float:
+    """Residual of the live power balance: consumption - (production + grid).
+
+    Positive grid_w is drawing, negative is exporting, so the three channels
+    should account for each other and leave only CT measurement noise here.
+    A large residual means an upstream channel is misreporting (observed in
+    the wild: negative consumption_w alongside grid_w=0 while producing).
+    """
+    return round(consumption_w - (production_w + grid_w), 2)
+
+
 def _is_bridge_online(window_start: int, now: datetime) -> bool:
     """True if the most recently completed window ended within the last ~20 minutes.
 
@@ -174,8 +189,12 @@ async def get_current_status() -> CurrentStatus:
     negative while exporting), whether the bridge is currently online, when it
     last recorded data (Pacific ISO 8601), today's produced/consumed/exported
     energy in kWh accumulated since Pacific midnight, and what share of today's
-    expected 15-minute windows so far the bridge has marked complete. Raises
-    an error if the bridge is unreachable or has no recent power samples.
+    expected 15-minute windows so far the bridge has marked complete. Also
+    returns a live power-balance check: `power_balance_w` (the residual of
+    consumption - production - grid) and `is_power_data_consistent` (False
+    when the instantaneous channels contradict each other — the live watts
+    should then not be trusted, though today's kWh totals are unaffected).
+    Raises an error if the bridge is unreachable or has no recent power samples.
     """
     client = _build_client()
     now = _now()
@@ -192,10 +211,17 @@ async def get_current_status() -> CurrentStatus:
         today_data_completeness_pct,
     ) = await _fetch_today_running_totals(client, now)
 
+    production_w = float(latest_sample["production_w"])
+    consumption_w = float(latest_sample["consumption_w"])
+    grid_w = float(latest_sample["grid_w"])
+    power_balance_w = _power_balance_w(production_w, consumption_w, grid_w)
+
     return CurrentStatus(
-        production_w=float(latest_sample["production_w"]),
-        consumption_w=float(latest_sample["consumption_w"]),
-        grid_w=float(latest_sample["grid_w"]),
+        production_w=production_w,
+        consumption_w=consumption_w,
+        grid_w=grid_w,
+        power_balance_w=power_balance_w,
+        is_power_data_consistent=abs(power_balance_w) <= _POWER_BALANCE_TOLERANCE_W,
         is_online=_is_bridge_online(window_start, now),
         last_data_at=epoch_to_pacific_iso(window_start),
         today_produced_kwh=today_produced_kwh,

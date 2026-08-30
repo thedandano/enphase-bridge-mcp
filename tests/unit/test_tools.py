@@ -171,6 +171,9 @@ async def test_get_current_status_happy_path(pinned_now: datetime) -> None:
     assert result.production_w == 1200.0
     assert result.consumption_w == 800.0
     assert result.grid_w == -400.0
+    # 800 consumed = 1200 produced + (-400) exported: channels agree exactly.
+    assert result.power_balance_w == 0.0
+    assert result.is_power_data_consistent is True
     assert result.is_online is True
     assert result.last_data_at == "2026-06-15T10:50:00-07:00"
     assert result.today_produced_kwh == 2.5  # (1000+1500) Wh
@@ -180,6 +183,58 @@ async def test_get_current_status_happy_path(pinned_now: datetime) -> None:
     # and the pinned "now" (11:00 Pacific).
     assert result.today_data_completeness_pct == 4.55
     assert result.uptime_seconds == 12345
+
+
+@respx.mock
+async def test_get_current_status_flags_contradictory_power_channels(
+    pinned_now: datetime,
+) -> None:
+    """Real-world regression: the bridge once reported negative consumption with
+    zero grid flow while producing 2850 W — physically impossible together. The
+    tool must flag it, not pass it through as trustworthy."""
+    now_epoch = int(FIXED_NOW.timestamp())
+    window_start = now_epoch - 600
+
+    respx.get(f"{BRIDGE_URL}/api/health").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "status": "ok",
+                "last_window_start": window_start,
+                "token_expires_at": 1900000000,
+                "uptime_seconds": 12345,
+            },
+        )
+    )
+    respx.get(f"{BRIDGE_URL}/api/energy/windows/latest").mock(
+        return_value=httpx.Response(200, json=make_window(window_start, 900.0, 400.0, 0.0, 300.0))
+    )
+    respx.get(f"{BRIDGE_URL}/api/power/samples").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "samples": [
+                    {
+                        "sampled_at": now_epoch - 60,
+                        "production_w": 2850.0,
+                        "consumption_w": -543.0,
+                        "grid_w": 0.0,
+                    }
+                ],
+                "total": 1,
+                "limit": 50,
+                "offset": 0,
+            },
+        )
+    )
+    mock_windows([make_window(1781506800, 1000.0, 400.0, 0.0, 300.0)])
+
+    result = await get_current_status()
+
+    assert result.power_balance_w == -3393.0  # -543 - (2850 + 0)
+    assert result.is_power_data_consistent is False
+    # The raw channels still pass through unaltered — flagged, never rewritten.
+    assert result.consumption_w == -543.0
 
 
 @respx.mock

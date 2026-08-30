@@ -34,6 +34,19 @@ class CurrentStatus(ApiModel):
     """Instantaneous site consumption, in watts."""
     grid_w: float
     """Instantaneous grid flow, in watts. Negative means exporting to the grid."""
+    power_balance_w: float
+    """Power-balance residual: consumption_w - (production_w + grid_w), in watts.
+
+    With the sign conventions above these three channels should account for
+    each other, so this should sit near zero (CT measurement noise only). A
+    large residual means at least one channel is misreporting upstream —
+    see `is_power_data_consistent`."""
+    is_power_data_consistent: bool
+    """False when the instantaneous channels contradict each other
+    (|power_balance_w| exceeds tolerance). The live watts above are then
+    physically impossible together (e.g. negative consumption while
+    producing) and should not be presented as trustworthy; today's kWh
+    running totals come from a different pipeline and are unaffected."""
     is_online: bool
     """True if the bridge has recorded a completed window within the last ~20 minutes."""
     last_data_at: str
