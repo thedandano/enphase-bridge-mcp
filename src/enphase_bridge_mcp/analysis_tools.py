@@ -105,23 +105,21 @@ def _daily_total(stats: dict[str, Any]) -> DailyTotal:
     )
 
 
-def _avg_daily_produced_kwh(finished_days: list[dict[str, Any]]) -> float:
+def _avg_daily_produced_kwh(finished_days: list[dict[str, Any]]) -> float | None:
     """Average produced kWh over finished days with data only (see
-    `PeriodSummary.avg_daily_produced_kwh` for why)."""
+    `PeriodSummary.avg_daily_produced_kwh` for why). None when there are no
+    finished days — "not available yet" must not read as "0 kWh average"."""
     if not finished_days:
-        return 0.0
+        return None
     total_wh: float = sum(float(s["produced_wh"]) for s in finished_days)
     return round(total_wh / 1000 / len(finished_days), 2)
 
 
 def _best_worst_days(
-    finished_days: list[dict[str, Any]], start_date: str, end_date: str
-) -> tuple[DayProduced, DayProduced]:
+    finished_days: list[dict[str, Any]],
+) -> tuple[DayProduced | None, DayProduced | None]:
     if not finished_days:
-        raise ToolError(
-            f"enphase-bridge has no completed day with data between {start_date} and "
-            f"{end_date} (Pacific) to determine the best/worst day"
-        )
+        return (None, None)
     best = max(finished_days, key=lambda s: s["produced_wh"])
     worst = min(finished_days, key=lambda s: s["produced_wh"])
     best_day: date = best["day"]
@@ -182,8 +180,7 @@ async def _build_period_summary(
 
     Raises:
         ValueError: invalid/reversed dates, or a range over `_MAX_PERIOD_DAYS` days.
-        ToolError: the bridge has no windows recorded anywhere in the range, or
-            no day in the range is both finished and has recorded data.
+        ToolError: the bridge has no windows recorded anywhere in the range.
     """
     start, end = _validate_period(start_date, end_date)
     range_start_utc, _ = pacific_day_bounds(start.isoformat())
@@ -204,11 +201,15 @@ async def _build_period_summary(
         round(complete_count / expected_windows * 100, 2) if expected_windows > 0 else 0.0
     )
 
-    totals = _period_totals(windows)
+    # Total only windows that fall on requested days — a misbehaving bridge
+    # returning out-of-range windows must not inflate totals while the
+    # daily_breakdown (grouped per requested day) shows nothing.
+    in_range_windows = [w for day in all_days for w in by_day.get(day, [])]
+    totals = _period_totals(in_range_windows)
 
     finished_days = [s for s in day_stats if s["has_data"] and not s["is_partial"]]
     avg_daily_produced_kwh = _avg_daily_produced_kwh(finished_days)
-    best_day, worst_day = _best_worst_days(finished_days, start_date, end_date)
+    best_day, worst_day = _best_worst_days(finished_days)
 
     return PeriodSummary(
         start_date=start.isoformat(),
@@ -242,9 +243,12 @@ async def get_period_summary(start_date: str, end_date: str) -> PeriodSummary:
     a partial, still-in-progress day, but is excluded from average/best/worst
     day calculations (see `PeriodSummary.avg_daily_produced_kwh`/`best_day`/
     `worst_day`) so it is never compared against finished days as if it were
-    one. Raises an error for invalid or reversed dates, a range over 92 days,
-    if the bridge has no data anywhere in the range, or if no day in the
-    range is both finished and has recorded data.
+    one. When no day in the range is both finished and has recorded data
+    (e.g. the range only covers a still-in-progress "today"), the period
+    totals are still returned and `avg_daily_produced_kwh`/`best_day`/
+    `worst_day` are null — not available yet, not zero. Raises an error for
+    invalid or reversed dates, a range over 92 days, or if the bridge has no
+    data anywhere in the range.
     """
     client = _build_client()
     try:

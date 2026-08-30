@@ -138,7 +138,7 @@ class PeriodSummary(ApiModel):
     """produced_kwh - consumed_kwh across the whole period."""
     self_consumption_pct: float
     """Share of produced energy consumed on-site rather than exported, 0-100."""
-    avg_daily_produced_kwh: float
+    avg_daily_produced_kwh: float | None
     """Sum of produced_kwh over finished days that have data (`DailyTotal.has_data`
     and not `DailyTotal.is_partial`), divided by the count of those same
     days — not the raw calendar `day_count`, and not this period's
@@ -146,13 +146,17 @@ class PeriodSummary(ApiModel):
     the range has one). Days the bridge has no data for (collector gap, or a
     day not reached yet) and any still-in-progress "today" are excluded from
     both the numerator and the denominator, so a partial day's so-far
-    production never drags this figure up or down."""
-    best_day: DayProduced
+    production never drags this figure up or down. None when the range has
+    no finished day with data (e.g. it only covers a still-in-progress
+    "today") — not available yet, not zero."""
+    best_day: DayProduced | None
     """The highest-production day in the range, considering only finished days
-    that have recorded data (excludes gaps and any still-in-progress "today")."""
-    worst_day: DayProduced
+    that have recorded data (excludes gaps and any still-in-progress "today").
+    None when the range has no such day."""
+    worst_day: DayProduced | None
     """The lowest-production day in the range, considering only finished days
-    that have recorded data (excludes gaps and any still-in-progress "today")."""
+    that have recorded data (excludes gaps and any still-in-progress "today").
+    None when the range has no such day."""
     daily_breakdown: list[DailyTotal]
     """One entry per calendar day in the range, oldest first. A day with no
     windows recorded by the bridge appears with all totals at 0.0 and

@@ -127,6 +127,7 @@ async def test_get_period_summary_happy_path_and_math(pinned_now: datetime) -> N
     assert day2.date == "2026-06-15"
     assert day2.produced_kwh == 2.5  # (1000+1500) Wh
 
+    assert result.best_day is not None and result.worst_day is not None
     assert result.best_day.date == "2026-06-15"
     assert result.best_day.produced_kwh == 2.5
     assert result.worst_day.date == "2026-06-14"
@@ -150,6 +151,7 @@ async def test_get_period_summary_single_day_range(pinned_now: datetime) -> None
 
     assert result.day_count == 1
     assert result.produced_kwh == 0.5
+    assert result.best_day is not None and result.worst_day is not None
     assert result.best_day.date == result.worst_day.date == "2026-06-14"
 
 
@@ -176,6 +178,7 @@ async def test_get_period_summary_missing_day_reports_zeros(pinned_now: datetime
     assert missing_day.is_partial is False
 
     # The data-less day must never win worst_day just because it zero-fills.
+    assert result.best_day is not None and result.worst_day is not None
     assert result.worst_day.date == "2026-06-14"
     assert result.best_day.date == "2026-06-14"
     # avg is over the one day that actually has data, not the raw 2-day span.
@@ -183,17 +186,25 @@ async def test_get_period_summary_missing_day_reports_zeros(pinned_now: datetime
 
 
 @respx.mock
-async def test_get_period_summary_all_days_missing_data_raises_tool_error(
+async def test_get_period_summary_no_finished_day_returns_null_stats(
     pinned_now: datetime,
 ) -> None:
     """The bridge returned windows somewhere (so the top-level empty-result guard doesn't
     fire), but none of them land inside this range's calendar days — there is no finished
-    day with data to call best/worst, so this must raise rather than fabricate a winner."""
+    day with data, so avg/best/worst must be None ("not available yet"), never a
+    fabricated winner or a 0.0 average, while period totals still come back."""
     windows = [make_window(1, 500.0, 300.0)]  # 1969-12-31 Pacific: outside any 2026 range
     mock_windows(windows)
 
-    with pytest.raises(ToolError, match="no completed day with data"):
-        await get_period_summary(start_date="2026-06-14", end_date="2026-06-15")
+    result = await get_period_summary(start_date="2026-06-14", end_date="2026-06-15")
+
+    assert result.avg_daily_produced_kwh is None
+    assert result.best_day is None
+    assert result.worst_day is None
+    # The out-of-range window must not leak into period totals either — totals
+    # and daily_breakdown must agree on which windows count.
+    assert result.produced_kwh == 0.0
+    assert all(not d.has_data for d in result.daily_breakdown)
 
 
 @respx.mock
@@ -366,6 +377,8 @@ async def test_compare_periods_happy_path_with_deltas(pinned_now: datetime) -> N
     )
 
     # Only the two days with data (of each 7-day range) are eligible for best/worst.
+    assert result.period_a.best_day is not None and result.period_a.worst_day is not None
+    assert result.period_b.best_day is not None and result.period_b.worst_day is not None
     assert result.period_a.best_day.date == "2026-06-09"
     assert result.period_a.worst_day.date == "2026-06-08"
     assert result.period_b.best_day.date == "2026-06-02"
