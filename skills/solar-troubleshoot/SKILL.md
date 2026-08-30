@@ -20,10 +20,10 @@ Never diagnose "low production" from current watts outside daylight hours — ze
 
 ## The three failure classes — always name which one applies
 
-- **Data pipeline problem**: BOTH signals agree — `data_as_of` old AND `is_online` false → the enphase-bridge service or collector is down; the panels are probably fine. If tools error with "Cannot reach enphase-bridge", say to check that the bridge service is running. If the two signals disagree (one stale, one fresh), say "data freshness is inconsistent; I can't confirm inverter health yet" — don't pick a failure class.
+- **Data pipeline problem**, reached two ways: (a) any tool errors with "Cannot reach enphase-bridge" — the bridge itself is down, no further signals needed; say to check that the bridge service is running. Or (b) BOTH freshness signals agree — `data_as_of` old AND `is_online` false → the collector pipeline is down. Either way the panels are probably fine. If the two freshness signals disagree (one stale, one fresh), say "data freshness is inconsistent; I can't confirm inverter health yet" — don't pick a failure class.
 - **Inverter(s) need attention**: specific serials in `attention_needed` while the rest report fine.
 - **Low production**: all inverters online, output just low **during daylight and across recent full days** — offer weather/season as a possible (not confirmed) explanation before suggesting anything is broken.
-- **Unable to confirm live output**: `get_current_status` errors with "no power samples" while inverter health looks fine → say the live reading is unavailable right now, and judge from daily totals instead — don't guess at the live state.
+- **Unable to confirm live output**: `get_current_status` errors with "no power samples" while inverter health looks fine → say the live reading is unavailable right now, and judge from daily totals instead — don't guess at the live state. If inverter health is stale AND the live status is erroring too, that's two degraded signals → classify as **data pipeline problem** instead.
 
 ## Output format
 
