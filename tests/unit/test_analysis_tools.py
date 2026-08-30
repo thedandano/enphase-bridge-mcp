@@ -201,6 +201,9 @@ async def test_get_period_summary_no_finished_day_returns_null_stats(
     assert result.avg_daily_produced_kwh is None
     assert result.best_day is None
     assert result.worst_day is None
+    # The out-of-range window must not leak into period totals either — totals
+    # and daily_breakdown must agree on which windows count.
+    assert result.produced_kwh == 0.0
     assert all(not d.has_data for d in result.daily_breakdown)
 
 

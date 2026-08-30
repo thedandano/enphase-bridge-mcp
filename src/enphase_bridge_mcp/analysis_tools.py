@@ -201,7 +201,11 @@ async def _build_period_summary(
         round(complete_count / expected_windows * 100, 2) if expected_windows > 0 else 0.0
     )
 
-    totals = _period_totals(windows)
+    # Total only windows that fall on requested days — a misbehaving bridge
+    # returning out-of-range windows must not inflate totals while the
+    # daily_breakdown (grouped per requested day) shows nothing.
+    in_range_windows = [w for day in all_days for w in by_day.get(day, [])]
+    totals = _period_totals(in_range_windows)
 
     finished_days = [s for s in day_stats if s["has_data"] and not s["is_partial"]]
     avg_daily_produced_kwh = _avg_daily_produced_kwh(finished_days)
