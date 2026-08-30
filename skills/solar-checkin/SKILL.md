@@ -18,6 +18,7 @@ Answer with real numbers from the enphase MCP tools — never estimate or invent
 
 - `grid_w` negative means **exporting** — phrase as "sending X W to the grid"; positive means drawing from the grid. Say which, never a raw signed number.
 - `is_online` false means the data is stale — say so, cite `last_data_at`, and do NOT present the wattage numbers as live.
+- `is_power_data_consistent` false means the live wattage channels contradict each other (a known upstream sensor issue) — present today's kWh totals normally, but replace the template's "☀️ Right now" line with `☀️ Right now: live reading unavailable (sensor data inconsistent)` instead of reporting the raw watts as fact. This overrides the template.
 - `today_data_completeness_pct` below 100 means today's totals are built from partial data (collector gap) — caveat the totals in one line.
 - These caveats exist because presenting stale or partial data as live is worse than no answer.
 
