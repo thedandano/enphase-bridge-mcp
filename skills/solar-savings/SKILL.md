@@ -31,7 +31,7 @@ Exception — user-fixable errors keep their own guidance: invalid or reversed d
 ALWAYS use this exact template (drop bracketed parts when not applicable):
 
 ```
-💰 True-up estimate (<start> → <end>): <you're $X ahead so far | you owe $X so far>
+💰 True-up estimate (<start> → <end>): <you're $X ahead so far | you owe $X so far | roughly break-even so far>
 Peak: imported <kWh> kWh ($<cost>) · exported <kWh> kWh ($<credit> credit)
 Off-peak: imported <kWh> kWh ($<cost>) · exported <kWh> kWh ($<credit> credit)
 Super off-peak: imported <kWh> kWh ($<cost>) · exported <kWh> kWh ($<credit> credit)
