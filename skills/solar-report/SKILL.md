@@ -21,6 +21,14 @@ Build reports from the enphase MCP tools — never estimate or fill gaps with in
 - **Partial current period vs finished prior period**: when the current range is still in progress (it includes today, or `is_partial` days), the template's `vs <prior period>` clause must be phrased as "so far" against the prior period's full total (e.g. "42 kWh so far vs 61 kWh for the full prior week") — never as an unqualified delta or percent. A "down X%" verdict is only allowed when both periods are complete.
 - `data_completeness_pct` below 100, days with `has_data` false, **or any day with `is_partial` true** mean gaps: caveat in one line. Note `data_completeness_pct` can read 100 while today is still in progress (its denominator is windows expected *so far*) — so a range that includes today always gets the caveat, and a comparison against a completed prior period must name the partial day rather than compare as complete. The daily average already excludes unfinished/missing days — say so if the user asks why numbers look different.
 
+## When the tools error
+
+If a tool errors (bridge unreachable, or no energy data for the range), do NOT render the numeric template and do NOT surface the raw error. Say: "I can't read your home's solar data for that period right now. This is a data-connection or data-gap issue, not proof that anything is wrong with the panels." Offer to try a different range only if a narrower one could plausibly have data.
+
+Exception — user-fixable errors keep their own guidance: the over-92-days cap and invalid/reversed dates are request problems, not data problems. Handle those per "Limits and caveats" (split the range, fix the dates) and never present them as a data-connection issue.
+
+If only the **optional** `compare_periods` call fails while the primary `get_period_summary` succeeded, render the report normally and add one line that the comparison is unavailable — never suppress a successful report over a failed comparison.
+
 ## Output format
 
 ALWAYS use this exact template (drop bracketed parts when not applicable):
