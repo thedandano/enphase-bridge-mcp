@@ -18,6 +18,11 @@ Diagnose in a fixed order — the order matters because stale data mimics dead h
 
 Never diagnose "low production" from current watts outside daylight hours — zero watts at night is a healthy system. Near dawn or dusk, low watts are expected too; judge production from full-day totals (step 4), not the live number. This skill has no weather source: clouds/shading may be offered as a *possible* explanation, never a confirmed cause.
 
+## Reading the data correctly
+
+- `is_power_data_consistent` false on `get_current_status` means the live wattage channels contradict each other (a known upstream sensor issue). Don't present those watts as fact and don't classify from them: in the template's `Arrays` line, replace `(<watts> W)` with `(live watts unavailable — sensor data inconsistent)`. **This overrides the template.** Judge production from the finished-day totals in step 4 instead, which come from a different pipeline and are unaffected.
+- This is **not** the same as `get_current_status` erroring. An inconsistent-but-returned reading still gives you `is_online` and `data_as_of`, so keep classifying freshness from those exactly as below — it does not by itself mean "unable to confirm live output" or "data pipeline problem".
+
 ## The three failure classes — always name which one applies
 
 - **Data pipeline problem**, reached two ways: (a) any tool errors with "Cannot reach enphase-bridge" — the bridge itself is down, no further signals needed; say to check that the bridge service is running. Or (b) BOTH freshness signals agree — `data_as_of` old AND `is_online` false → the collector pipeline is down. Either way the panels are probably fine. If the two freshness signals disagree (one stale, one fresh), say "data freshness is inconsistent; I can't confirm inverter health yet" — don't pick a failure class.
