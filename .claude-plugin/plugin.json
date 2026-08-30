@@ -1,7 +1,7 @@
 {
   "name": "enphase-bridge",
   "description": "Ask your AI about your home solar: current production, history, comparisons, inverter health, and true-up cost estimates via the local enphase-bridge service.",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "author": {
     "name": "thedandano"
   },
