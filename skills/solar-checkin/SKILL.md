@@ -11,7 +11,8 @@ Answer with real numbers from the enphase MCP tools — never estimate or invent
 
 1. Call `get_current_status` — always, when the question involves "now" or today.
 2. Also call `compare_days` (defaults: today vs yesterday) when the user implies a comparison ("how am I doing", "vs yesterday", "better than").
-   **Partial-day rule**: while today is still in progress, today-vs-yesterday is an unfair comparison (a partial day against a full one). Never conclude production is "down X%" mid-day. Present yesterday's final total as a reference ("15.7 kWh so far · yesterday finished at 22.3 kWh") and, if a verdict is wanted, frame it as pace ("on pace to match yesterday"), noting the day isn't over. The raw percent delta from the tool may only be stated once today is complete.
+   **Partial-day rule**: while today is still in progress, today-vs-yesterday's default (full-day) comparison is an unfair one (a partial day against a full one). Never state that *untruncated* full-day percent delta as a verdict mid-day — it may only be stated once today is complete. Present yesterday's final total as a reference ("15.7 kWh so far · yesterday finished at 22.3 kWh").
+   If a mid-day verdict is wanted, call `compare_days(same_time_of_day=True)` instead: it truncates yesterday to the same elapsed time-of-day as today-so-far, and its percent delta IS a fair like-for-like figure — report that one directly (e.g. "down 12% vs. yesterday at this same time"). Otherwise frame it as pace ("on pace to match yesterday"), noting the day isn't over.
 3. For a specific past day ("yesterday", "last Tuesday"), call `get_daily_summary(date)` instead of `get_current_status` and use the **historical template** below (it replaces the live template entirely — there is no "right now" for a finished day). Resolve day names in Pacific time and label the date as Pacific.
 
 ## Reading the data correctly

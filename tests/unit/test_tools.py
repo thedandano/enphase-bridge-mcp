@@ -8,7 +8,7 @@ hits the network. Where "today"/"yesterday" matter, the server module's
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -17,6 +17,7 @@ import respx
 from mcp.server.mcpserver.exceptions import ToolError
 
 from enphase_bridge_mcp import server as server_module
+from enphase_bridge_mcp.formatting import pacific_day_bounds
 from enphase_bridge_mcp.server import compare_days, get_current_status, get_daily_summary
 
 BRIDGE_URL = "http://localhost:8080"
@@ -389,3 +390,176 @@ async def test_compare_days_guards_divide_by_zero() -> None:
 async def test_compare_days_bad_date_raises_tool_error() -> None:
     with pytest.raises(ToolError, match="Invalid date_spec"):
         await compare_days(date_a="not-a-date", date_b="yesterday")
+
+
+# --- compare_days: same_time_of_day --------------------------------------------------------
+
+
+def mock_windows_filtered(all_windows: list[dict[str, Any]]) -> respx.Route:
+    """Mock `/api/energy/windows` filtering by the request's start/end query
+    params, unlike `mock_windows` (which returns the same payload regardless
+    of query). Needed to prove `same_time_of_day` truncation actually changes
+    which windows get fetched, not just what `compare_days` does with a fixed
+    canned response.
+    """
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        start = datetime.fromisoformat(request.url.params["start"])
+        end = datetime.fromisoformat(request.url.params["end"])
+        filtered = [
+            w for w in all_windows if start.timestamp() <= w["window_start"] < end.timestamp()
+        ]
+        return httpx.Response(200, json=windows_page(filtered))
+
+    return respx.get(f"{BRIDGE_URL}/api/energy/windows").mock(side_effect=responder)
+
+
+@respx.mock
+async def test_compare_days_same_time_of_day_truncates_complete_day(pinned_now: datetime) -> None:
+    """At the pinned 11:00 Pacific "now", today-vs-yesterday with
+    same_time_of_day=True must cut yesterday down to its own 00:00-11:00
+    Pacific span to match today's so-far span -- not yesterday's full day.
+    """
+    y0 = 1781420400  # 2026-06-14T00:00:00-07:00 Pacific ("yesterday")
+    yesterday_windows = [
+        make_window(y0 + 0 * 3600, 1000.0, 200.0),  # 00:00 Pacific
+        make_window(y0 + 5 * 3600, 1000.0, 200.0),  # 05:00 Pacific
+        make_window(y0 + 10 * 3600, 1000.0, 200.0),  # 10:00 Pacific
+        make_window(y0 + 15 * 3600, 1000.0, 200.0),  # 15:00 Pacific -- after cutoff
+        make_window(y0 + 20 * 3600, 1000.0, 200.0),  # 20:00 Pacific -- after cutoff
+    ]
+    t0 = 1781506800  # 2026-06-15T00:00:00-07:00 Pacific ("today")
+    today_windows = [
+        make_window(t0 + 0 * 3600, 1000.0, 200.0),  # 00:00 Pacific
+        make_window(t0 + 5 * 3600, 1000.0, 200.0),  # 05:00 Pacific
+    ]
+    mock_windows_filtered(yesterday_windows + today_windows)
+
+    truncated = await compare_days(date_a="today", date_b="yesterday", same_time_of_day=True)
+    full = await compare_days(date_a="today", date_b="yesterday", same_time_of_day=False)
+
+    # today is unaffected by the flag either way: 2 windows * 1000 Wh = 2.0 kWh.
+    assert truncated.day_a.produced_kwh == 2.0
+    assert full.day_a.produced_kwh == 2.0
+
+    # yesterday truncated to 00:00-11:00 Pacific: only the 00:00/05:00/10:00
+    # windows fall inside -> 3 * 1000 Wh = 3.0 kWh.
+    assert truncated.day_b.produced_kwh == 3.0
+    # yesterday untouched: all 5 windows -> 5.0 kWh.
+    assert full.day_b.produced_kwh == 5.0
+
+    # Proof the truncation changes the comparison itself, not just cosmetics:
+    # the percent deltas differ numerically depending on the flag.
+    assert truncated.produced_pct_diff == -33.33  # (2.0-3.0)/3.0*100
+    assert full.produced_pct_diff == -60.0  # (2.0-5.0)/5.0*100
+    assert truncated.produced_pct_diff != full.produced_pct_diff
+
+
+@respx.mock
+async def test_compare_days_same_time_of_day_noop_when_both_days_complete(
+    pinned_now: datetime,
+) -> None:
+    """same_time_of_day=True must not truncate anything when neither day is
+    today -- both days are already complete, so there's no partial day to
+    match against, per the tool's documented no-op case."""
+    a0 = 1781074800  # 2026-06-10T00:00:00-07:00 Pacific
+    b0 = 1780642800  # 2026-06-05T00:00:00-07:00 Pacific
+    day_a_windows = [
+        make_window(a0, 1000.0, 500.0),
+        make_window(a0 + 3600, 1500.0, 700.0),
+    ]
+    day_b_windows = [
+        make_window(b0, 800.0, 600.0),
+        make_window(b0 + 3600, 1200.0, 600.0),
+    ]
+    mock_windows_filtered(day_a_windows + day_b_windows)
+
+    result = await compare_days(date_a="2026-06-10", date_b="2026-06-05", same_time_of_day=True)
+    baseline = await compare_days(date_a="2026-06-10", date_b="2026-06-05", same_time_of_day=False)
+
+    assert result == baseline
+    assert result.day_a.produced_kwh == 2.5  # (1000+1500) Wh, full day, untruncated
+    assert result.day_b.produced_kwh == 2.0  # (800+1200) Wh, full day, untruncated
+
+
+# --- compare_days: DST correctness of the cutoff -------------------------------------
+
+
+def _spans_on_both_sides(date_spec: str, now: datetime) -> tuple[timedelta, timedelta]:
+    """(span covered on today, span covered on `date_spec`) for the cutoffs at `now`."""
+    from enphase_bridge_mcp.server import _equal_span_cutoffs
+
+    today_start, _ = pacific_day_bounds("today", now=now)
+    other_start, _ = pacific_day_bounds(date_spec, now=now)
+    today_cutoff, other_cutoff = _equal_span_cutoffs(date_spec, now=now)
+    return today_cutoff - today_start, other_cutoff - other_start
+
+
+def test_equal_elapsed_cutoff_is_duration_exact_on_ordinary_day() -> None:
+    """The ordinary case: both sides cover the same span, and it matches the wall clock."""
+    now = datetime(2026, 6, 15, 21, 0, tzinfo=UTC)  # 14:00 Pacific
+    today_span, other_span = _spans_on_both_sides("2026-06-14", now)
+
+    assert today_span == other_span == timedelta(hours=14)
+
+
+def test_equal_elapsed_cutoff_stays_exact_across_spring_forward() -> None:
+    """2026-03-08 loses an hour at 02:00 Pacific. Comparing that day against the
+    day before must still cover equal durations — a wall-clock cutoff would not,
+    and 02:30 Pacific does not exist on that date at all.
+    """
+    now = datetime(2026, 3, 8, 21, 0, tzinfo=UTC)  # 14:00 PDT, 13h elapsed (not 14)
+    today_span, other_span = _spans_on_both_sides("2026-03-07", now)
+
+    assert today_span == other_span, "spring-forward day must stay duration-exact"
+    assert today_span == timedelta(hours=13), "23-hour day: 14:00 is 13h after midnight"
+
+
+def test_equal_elapsed_cutoff_stays_exact_across_fall_back() -> None:
+    """2026-11-01 repeats 01:00-02:00 Pacific, so 01:30 happens twice. At the SECOND
+    01:30, 150 minutes have elapsed today; a wall-clock cutoff would compare that
+    against only 90 minutes of the prior day and still call it fair. This is the
+    exact case that made the wall-clock approach wrong.
+    """
+    second_0130 = datetime(2026, 11, 1, 9, 30, tzinfo=UTC)  # 01:30 PST, the repeat
+    today_span, other_span = _spans_on_both_sides("2026-10-31", second_0130)
+
+    assert today_span == timedelta(minutes=150), "the repeated hour counts as elapsed"
+    assert other_span == today_span, "fall-back must not silently compare 150m against 90m"
+
+
+def test_equal_span_trims_today_when_it_outlasts_the_comparison_day() -> None:
+    """In the final hour of a 25-hour fall-back day, today can elapse past the
+    length of a 24-hour comparison day. Clamping only the comparison side would
+    leave today longer and quietly break the equal-duration promise, so today is
+    trimmed to the shared span too.
+    """
+    late = datetime(2026, 11, 2, 7, 59, tzinfo=UTC)  # 23:59 PST on the 25-hour day
+    today_start, _ = pacific_day_bounds("today", now=late)
+    other_start, other_end = pacific_day_bounds("2026-10-31", now=late)
+
+    today_span, other_span = _spans_on_both_sides("2026-10-31", late)
+
+    assert late - today_start > other_end - other_start, "precondition: today is longer"
+    assert today_span == other_span, "both sides must still cover an identical span"
+    assert other_span == other_end - other_start, "the shorter day is covered in full"
+
+
+@respx.mock
+async def test_compare_days_same_time_of_day_no_op_when_both_dates_are_today(
+    pinned_now: datetime,
+) -> None:
+    """Both sides already cover the same partial span, so there is nothing to
+    truncate — "today" vs. today's explicit date must equal the untruncated call.
+    """
+    today_windows = [
+        make_window(1781506800, 1000.0, 400.0, 0.0, 300.0),
+        make_window(1781507700, 1500.0, 600.0, 0.0, 500.0),
+    ]
+    mock_windows(today_windows)
+
+    result = await compare_days(date_a="today", date_b="2026-06-15", same_time_of_day=True)
+    baseline = await compare_days(date_a="today", date_b="2026-06-15", same_time_of_day=False)
+
+    assert result == baseline
+    assert result.day_a.produced_kwh == result.day_b.produced_kwh == 2.5

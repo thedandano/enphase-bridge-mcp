@@ -129,6 +129,43 @@ async def test_tools_list_shows_all_eight_tools_with_structured_schemas() -> Non
     assert "self_consumption_pct" in schema_properties
 
 
+def assert_nullable(properties: dict[str, Any], field: str) -> None:
+    """Assert `field`'s schema admits null, however pydantic chose to render it.
+
+    A plain scalar renders as anyOf[{type}, {type: null}]; a nested model renders
+    as anyOf[{$ref}, {type: null}] — both must count, so this checks only for a
+    null branch rather than pinning the exact shape.
+    """
+    branches = properties[field].get("anyOf")
+    assert branches is not None, f"{field} should be a union, got {properties[field]}"
+    assert {"type": "null"} in branches, f"{field} must admit null, got {branches}"
+
+
+async def test_period_summary_schema_marks_incomplete_range_fields_nullable() -> None:
+    """A range with no finished day (e.g. "today so far") returns null for the
+    average and best/worst days. LLM clients branch on that null, so the emitted
+    schema must advertise it — on the tool itself and on the summaries nested
+    inside compare_periods.
+    """
+    nullable_fields = ("avg_daily_produced_kwh", "best_day", "worst_day")
+
+    async with mcp_app() as app, mcp_client_session(app) as session:
+        result = await session.list_tools()
+
+    period_tool = next(t for t in result.tools if t.name == "get_period_summary")
+    assert period_tool.output_schema is not None
+    for field in nullable_fields:
+        assert_nullable(period_tool.output_schema["properties"], field)
+
+    # compare_periods nests both summaries behind a $ref to one shared $defs entry,
+    # so period_a and period_b are covered by asserting on that definition.
+    compare_tool = next(t for t in result.tools if t.name == "compare_periods")
+    assert compare_tool.output_schema is not None
+    nested = compare_tool.output_schema["$defs"]["PeriodSummary"]["properties"]
+    for field in nullable_fields:
+        assert_nullable(nested, field)
+
+
 async def test_tools_list_refresh_tou_schedule_carries_mutation_annotations() -> None:
     """`refresh_tou_schedule` mutates upstream state, so it must be flagged
     not-read-only — and NOT idempotent, since the bridge's persistence is a
