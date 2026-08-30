@@ -25,6 +25,8 @@ Build reports from the enphase MCP tools — never estimate or fill gaps with in
 
 If a tool errors (bridge unreachable, or no energy data for the range), do NOT render the numeric template and do NOT surface the raw error. Say: "I can't read your home's solar data for that period right now. This is a data-connection or data-gap issue, not proof that anything is wrong with the panels." Offer to try a different range only if a narrower one could plausibly have data.
 
+Exception — user-fixable errors keep their own guidance: the over-92-days cap and invalid/reversed dates are request problems, not data problems. Handle those per "Limits and caveats" (split the range, fix the dates) and never present them as a data-connection issue.
+
 ## Output format
 
 ALWAYS use this exact template (drop bracketed parts when not applicable):
