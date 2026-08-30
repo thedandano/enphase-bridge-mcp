@@ -51,14 +51,29 @@ def _now() -> datetime:
     return datetime.now(tz=UTC)
 
 
-async def _build_daily_summary(client: BridgeClient, date_spec: str, now: datetime) -> DailySummary:
+async def _build_daily_summary(
+    client: BridgeClient,
+    date_spec: str,
+    now: datetime,
+    *,
+    end_override: datetime | None = None,
+) -> DailySummary:
     """Fetch and aggregate one Pacific day's windows into a `DailySummary`.
+
+    `end_override`, when given and earlier than the day's natural end, truncates
+    the window fetched (and `data_completeness_pct`'s expected-window count)
+    to that instant instead of the full Pacific day — used by `compare_days`'
+    `same_time_of_day` option to cut a complete day down to the same elapsed
+    span as an in-progress "today". `resolved_date` (and thus `date`) is
+    unaffected: it always reflects the day's calendar date, not the cutoff.
 
     Raises:
         ValueError: `date_spec` is not "today", "yesterday", or "YYYY-MM-DD".
         ToolError: the bridge has no windows recorded for that day.
     """
     start_utc, end_utc = pacific_day_bounds(date_spec, now=now)
+    if end_override is not None and end_override < end_utc:
+        end_utc = end_override
     windows = await client.list_windows(start_utc, end_utc)
     if not windows:
         raise ToolError(f"enphase-bridge has no energy data for {date_spec} (Pacific)")
@@ -109,6 +124,46 @@ async def _build_daily_summary(client: BridgeClient, date_spec: str, now: dateti
         peak_production_at=peak_production_at,
         data_completeness_pct=data_completeness_pct,
     )
+
+
+def _is_today(date_spec: str, now: datetime) -> bool:
+    """Whether `date_spec` resolves to the current Pacific civil day."""
+    start_utc, _ = pacific_day_bounds(date_spec, now=now)
+    today_start_utc, _ = pacific_day_bounds("today", now=now)
+    return start_utc == today_start_utc
+
+
+def _same_wall_clock_cutoff(date_spec: str, now: datetime) -> datetime:
+    """UTC instant on `date_spec`'s Pacific day matching `now`'s Pacific wall-clock time.
+
+    Used by `compare_days`' `same_time_of_day` option to truncate a complete
+    day to the same elapsed time-of-day as an in-progress "today" — e.g. at
+    14:00 Pacific, this returns 14:00 Pacific (as UTC) on `date_spec`'s date,
+    so both days cover 00:00-14:00.
+
+    DST: this matches wall-clock time-of-day (e.g. "14:00" both days), not
+    elapsed duration — a defensible, simple choice since the two days are
+    rarely on opposite sides of a DST transition and a spot-check ("how's my
+    solar") doesn't need duration-exact fairness. It only misbehaves for a
+    `now` whose local time falls in the one-hour DST gap/overlap itself
+    (2-3 AM on the transition date), which `zoneinfo` resolves via PEP 495's
+    fold=0 default rather than raising — not worth special-casing for a
+    check that's virtually never run at 2 AM.
+    """
+    other_start_utc, _ = pacific_day_bounds(date_spec, now=now)
+    other_date = other_start_utc.astimezone(PACIFIC).date()
+    now_pacific = now.astimezone(PACIFIC)
+    cutoff_pacific = datetime(
+        other_date.year,
+        other_date.month,
+        other_date.day,
+        now_pacific.hour,
+        now_pacific.minute,
+        now_pacific.second,
+        now_pacific.microsecond,
+        tzinfo=PACIFIC,
+    )
+    return cutoff_pacific.astimezone(UTC)
 
 
 def _pct_diff(a: float, b: float) -> float:
@@ -261,7 +316,11 @@ async def get_daily_summary(date: str = "today") -> DailySummary:
 
 
 @server.tool()
-async def compare_days(date_a: str = "today", date_b: str = "yesterday") -> DayComparison:
+async def compare_days(
+    date_a: str = "today",
+    date_b: str = "yesterday",
+    same_time_of_day: bool = False,
+) -> DayComparison:
     """Compare energy totals between two Pacific civil days.
 
     Each of `date_a`/`date_b` accepts "today", "yesterday", or "YYYY-MM-DD"
@@ -269,12 +328,31 @@ async def compare_days(date_a: str = "today", date_b: str = "yesterday") -> DayC
     kWh and percent deltas (day_a minus/relative-to day_b) for produced,
     consumed, and net energy. Percent deltas are 0.0 when day_b's value is
     zero. Raises an error for an invalid date, or if either day has no data.
+
+    `same_time_of_day`: when True and exactly one of the two days is today
+    (still in progress), the OTHER (complete) day's window is truncated to
+    the same wall-clock time-of-day since its own Pacific midnight, so both
+    sides cover an equal span — e.g. at 14:00 Pacific, today-vs-yesterday
+    then compares 00:00-14:00 on both days, making the percent deltas a fair
+    like-for-like comparison instead of partial-day-vs-full-day. If neither
+    day is today (both are already complete), `same_time_of_day` is a no-op:
+    both summaries cover their full 24-hour Pacific window as usual, since
+    there is no partial day to match.
     """
     client = _build_client()
     now = _now()
     try:
-        day_a = await _build_daily_summary(client, date_a, now)
-        day_b = await _build_daily_summary(client, date_b, now)
+        end_override_a = None
+        end_override_b = None
+        if same_time_of_day:
+            a_is_today = _is_today(date_a, now)
+            b_is_today = _is_today(date_b, now)
+            if a_is_today and not b_is_today:
+                end_override_b = _same_wall_clock_cutoff(date_b, now)
+            elif b_is_today and not a_is_today:
+                end_override_a = _same_wall_clock_cutoff(date_a, now)
+        day_a = await _build_daily_summary(client, date_a, now, end_override=end_override_a)
+        day_b = await _build_daily_summary(client, date_b, now, end_override=end_override_b)
     except ValueError as exc:
         raise ToolError(str(exc)) from exc
 

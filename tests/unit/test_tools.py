@@ -389,3 +389,93 @@ async def test_compare_days_guards_divide_by_zero() -> None:
 async def test_compare_days_bad_date_raises_tool_error() -> None:
     with pytest.raises(ToolError, match="Invalid date_spec"):
         await compare_days(date_a="not-a-date", date_b="yesterday")
+
+
+# --- compare_days: same_time_of_day --------------------------------------------------------
+
+
+def mock_windows_filtered(all_windows: list[dict[str, Any]]) -> respx.Route:
+    """Mock `/api/energy/windows` filtering by the request's start/end query
+    params, unlike `mock_windows` (which returns the same payload regardless
+    of query). Needed to prove `same_time_of_day` truncation actually changes
+    which windows get fetched, not just what `compare_days` does with a fixed
+    canned response.
+    """
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        start = datetime.fromisoformat(request.url.params["start"])
+        end = datetime.fromisoformat(request.url.params["end"])
+        filtered = [
+            w for w in all_windows if start.timestamp() <= w["window_start"] < end.timestamp()
+        ]
+        return httpx.Response(200, json=windows_page(filtered))
+
+    return respx.get(f"{BRIDGE_URL}/api/energy/windows").mock(side_effect=responder)
+
+
+@respx.mock
+async def test_compare_days_same_time_of_day_truncates_complete_day(pinned_now: datetime) -> None:
+    """At the pinned 11:00 Pacific "now", today-vs-yesterday with
+    same_time_of_day=True must cut yesterday down to its own 00:00-11:00
+    Pacific span to match today's so-far span -- not yesterday's full day.
+    """
+    y0 = 1781420400  # 2026-06-14T00:00:00-07:00 Pacific ("yesterday")
+    yesterday_windows = [
+        make_window(y0 + 0 * 3600, 1000.0, 200.0),  # 00:00 Pacific
+        make_window(y0 + 5 * 3600, 1000.0, 200.0),  # 05:00 Pacific
+        make_window(y0 + 10 * 3600, 1000.0, 200.0),  # 10:00 Pacific
+        make_window(y0 + 15 * 3600, 1000.0, 200.0),  # 15:00 Pacific -- after cutoff
+        make_window(y0 + 20 * 3600, 1000.0, 200.0),  # 20:00 Pacific -- after cutoff
+    ]
+    t0 = 1781506800  # 2026-06-15T00:00:00-07:00 Pacific ("today")
+    today_windows = [
+        make_window(t0 + 0 * 3600, 1000.0, 200.0),  # 00:00 Pacific
+        make_window(t0 + 5 * 3600, 1000.0, 200.0),  # 05:00 Pacific
+    ]
+    mock_windows_filtered(yesterday_windows + today_windows)
+
+    truncated = await compare_days(date_a="today", date_b="yesterday", same_time_of_day=True)
+    full = await compare_days(date_a="today", date_b="yesterday", same_time_of_day=False)
+
+    # today is unaffected by the flag either way: 2 windows * 1000 Wh = 2.0 kWh.
+    assert truncated.day_a.produced_kwh == 2.0
+    assert full.day_a.produced_kwh == 2.0
+
+    # yesterday truncated to 00:00-11:00 Pacific: only the 00:00/05:00/10:00
+    # windows fall inside -> 3 * 1000 Wh = 3.0 kWh.
+    assert truncated.day_b.produced_kwh == 3.0
+    # yesterday untouched: all 5 windows -> 5.0 kWh.
+    assert full.day_b.produced_kwh == 5.0
+
+    # Proof the truncation changes the comparison itself, not just cosmetics:
+    # the percent deltas differ numerically depending on the flag.
+    assert truncated.produced_pct_diff == -33.33  # (2.0-3.0)/3.0*100
+    assert full.produced_pct_diff == -60.0  # (2.0-5.0)/5.0*100
+    assert truncated.produced_pct_diff != full.produced_pct_diff
+
+
+@respx.mock
+async def test_compare_days_same_time_of_day_noop_when_both_days_complete(
+    pinned_now: datetime,
+) -> None:
+    """same_time_of_day=True must not truncate anything when neither day is
+    today -- both days are already complete, so there's no partial day to
+    match against, per the tool's documented no-op case."""
+    a0 = 1781074800  # 2026-06-10T00:00:00-07:00 Pacific
+    b0 = 1780642800  # 2026-06-05T00:00:00-07:00 Pacific
+    day_a_windows = [
+        make_window(a0, 1000.0, 500.0),
+        make_window(a0 + 3600, 1500.0, 700.0),
+    ]
+    day_b_windows = [
+        make_window(b0, 800.0, 600.0),
+        make_window(b0 + 3600, 1200.0, 600.0),
+    ]
+    mock_windows_filtered(day_a_windows + day_b_windows)
+
+    result = await compare_days(date_a="2026-06-10", date_b="2026-06-05", same_time_of_day=True)
+    baseline = await compare_days(date_a="2026-06-10", date_b="2026-06-05", same_time_of_day=False)
+
+    assert result == baseline
+    assert result.day_a.produced_kwh == 2.5  # (1000+1500) Wh, full day, untruncated
+    assert result.day_b.produced_kwh == 2.0  # (800+1200) Wh, full day, untruncated
