@@ -1,6 +1,6 @@
 ---
 name: solar-checkin
-description: Answer quick questions about the user's home solar system right now, today, or a single specific day. Use this skill whenever the user asks anything like "how's my solar", "how much am I producing right now", "solar today", "how'd we do today vs yesterday", "how'd solar do yesterday", "is my system exporting", or any casual check-in about current solar production, consumption, or grid flow — even if they don't name a tool.
+description: Answer quick questions about the user's home solar system right now, today, or a single specific day. Use this skill whenever the user asks anything like "how's my solar", "how much am I producing right now", "solar today", "how'd we do today vs yesterday", "how'd solar do yesterday", "is my system exporting", "why am I buying power", "am I importing from the grid", "why am I exporting so much", or any casual check-in about current solar production, consumption, or grid flow — even if they don't name a tool.
 ---
 
 # Solar Check-in
@@ -12,7 +12,7 @@ Answer with real numbers from the enphase MCP tools — never estimate or invent
 1. Call `get_current_status` — always, when the question involves "now" or today.
 2. Also call `compare_days` (defaults: today vs yesterday) when the user implies a comparison ("how am I doing", "vs yesterday", "better than").
    **Partial-day rule**: while today is still in progress, today-vs-yesterday is an unfair comparison (a partial day against a full one). Never conclude production is "down X%" mid-day. Present yesterday's final total as a reference ("15.7 kWh so far · yesterday finished at 22.3 kWh") and, if a verdict is wanted, frame it as pace ("on pace to match yesterday"), noting the day isn't over. The raw percent delta from the tool may only be stated once today is complete.
-3. For a specific past day ("yesterday", "last Tuesday"), call `get_daily_summary(date)` instead of `get_current_status` — there is no "right now" for a finished day, so use only the 📊 line of the template, with the resolved day as its label (e.g. `📊 Yesterday (2026-08-27): ...`), never the word "Today".
+3. For a specific past day ("yesterday", "last Tuesday"), call `get_daily_summary(date)` instead of `get_current_status` and use the **historical template** below (it replaces the live template entirely — there is no "right now" for a finished day). Resolve day names in Pacific time and label the date as Pacific.
 
 ## Reading the data correctly
 
@@ -27,9 +27,18 @@ Answer with real numbers from the enphase MCP tools — never estimate or invent
 ALWAYS use this exact template (drop the bracketed parts when not applicable):
 
 ```
-☀️ Right now: <X> W producing · <Y> W using · <sending Z W to grid | drawing Z W from grid>
+☀️ Right now: <X> W producing · <Y> W using · <sending Z W to grid | drawing Z W from grid | no net grid flow (0 W)>
 📊 Today so far: <A> kWh produced · <B> kWh used [ · yesterday finished at <Y> kWh ]
 ⚠️ <only if applicable: stale-data or partial-data caveat, one line>
 ```
+
+Historical template (for a finished day — replaces the live one):
+
+```
+📊 <Weekday>, <date> (Pacific): <A> kWh produced · <B> kWh used [ · vs <other day>: <±C> kWh ]
+⚠️ <only if data_completeness_pct < 100: "Only N% of expected readings were available; totals may be understated.">
+```
+
+Comparison fine print: if the comparison day's value is 0 kWh, the tool reports a 0% delta as a division-by-zero guard — show the kWh difference and say "percentage change: not available (comparison day was 0 kWh)", never "0% change".
 
 Keep any extra commentary to one sentence after the template unless the user asks for more.

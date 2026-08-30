@@ -24,7 +24,7 @@ Money answers come from `get_trueup_estimate` — never invent tariffs, projecti
 ALWAYS use this exact template (drop bracketed parts when not applicable):
 
 ```
-💰 True-up estimate (<start> → <end>): <you're $X ahead so far | you owe $X so far>
+💰 True-up estimate (<start> → <end>): <you're $X ahead so far | you owe $X so far | roughly break-even so far>
 Peak: imported <kWh> kWh ($<cost>) · exported <kWh> kWh ($<credit> credit)
 Off-peak: imported <kWh> kWh ($<cost>) · exported <kWh> kWh ($<credit> credit)
 Super off-peak: imported <kWh> kWh ($<cost>) · exported <kWh> kWh ($<credit> credit)
