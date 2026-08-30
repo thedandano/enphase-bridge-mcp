@@ -11,7 +11,7 @@ Money answers come from `get_trueup_estimate` — never invent tariffs, projecti
 
 1. Call `get_trueup_estimate(start_date, end_date)`. Default to the NEM year to date; if you don't know the user's true-up anniversary month, ask once and remember it for the session.
 2. The `breakdown` gives import/export kWh and dollars for each TOU period (peak / off-peak / super off-peak). That breakdown is the basis for any savings advice.
-3. Call `refresh_tou_schedule` only when: (a) the estimate errors with "no TOU schedule" — refresh once and retry the estimate (first-run bootstrap, per the tool contract), or (b) the user says their rates changed or the schedule looks stale — but in case (b), **ask first** ("I can refresh the saved rate schedule from OpenEI — want me to?") and only call it after the user says yes. It mutates upstream state (fetches from OpenEI), so it is never a routine read and never an unprompted one.
+3. Call `refresh_tou_schedule` only when: (a) the estimate errors with "no TOU schedule" — refresh once and retry the estimate (first-run bootstrap, per the tool contract), or (b) the user says their rates changed or the schedule looks stale — but in case (b), **ask first** ("I can refresh the saved rate schedule from OpenEI — want me to?") and only call it after the user says yes. It mutates upstream state (fetches from OpenEI), so it is never a routine read — and outside the bootstrap case (a), never an unprompted one.
 
 ## Reading the data correctly
 

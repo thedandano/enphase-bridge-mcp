@@ -273,8 +273,10 @@ class TrueUpEstimate(ApiModel):
     off_peak: TouPeriodBreakdown
     super_off_peak: TouPeriodBreakdown
     tou_schedule: ToUScheduleMeta
-    """The rate schedule this estimate was computed against. If it looks stale,
-    call `refresh_tou_schedule` and re-request the estimate."""
+    """The rate schedule this estimate was computed against. Cite it in any
+    answer built from this estimate. If it looks stale, tell the user and
+    ask before calling `refresh_tou_schedule` — that call mutates upstream
+    state and must not run unprompted."""
     computed_at: str
     """Pacific ISO 8601 timestamp the bridge computed this estimate at (now, not
     a bound of the period)."""

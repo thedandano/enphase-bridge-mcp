@@ -159,9 +159,11 @@ async def refresh_tou_schedule() -> ToUSchedule:
     fetched schedule as a new row (it does NOT overwrite the previous one —
     each call appends, and `get_trueup_estimate` always uses the most
     recently fetched row), so repeated calls are not idempotent and a timed-
-    out call may still have landed upstream. Call it once before the first
-    `get_trueup_estimate` (which otherwise errors with no schedule
-    configured), and again whenever utility rates change. Raises an error if
+    out call may still have landed upstream. Call it unprompted only for the
+    first-run bootstrap — when `get_trueup_estimate` errors with no schedule
+    configured, refresh once and retry. In every other case (rates changed,
+    schedule looks stale), ask the user for confirmation before calling.
+    Raises an error if
     OpenEI is unreachable or returns a non-2xx response, if its response
     can't be parsed, or if the configured rate label isn't present in it.
     """
