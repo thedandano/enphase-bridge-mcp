@@ -8,7 +8,7 @@ hits the network. Where "today"/"yesterday" matter, the server module's
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -17,6 +17,7 @@ import respx
 from mcp.server.mcpserver.exceptions import ToolError
 
 from enphase_bridge_mcp import server as server_module
+from enphase_bridge_mcp.formatting import pacific_day_bounds
 from enphase_bridge_mcp.server import compare_days, get_current_status, get_daily_summary
 
 BRIDGE_URL = "http://localhost:8080"
@@ -479,3 +480,80 @@ async def test_compare_days_same_time_of_day_noop_when_both_days_complete(
     assert result == baseline
     assert result.day_a.produced_kwh == 2.5  # (1000+1500) Wh, full day, untruncated
     assert result.day_b.produced_kwh == 2.0  # (800+1200) Wh, full day, untruncated
+
+
+# --- compare_days: DST correctness of the cutoff -------------------------------------
+
+
+def _elapsed_on_both_sides(date_spec: str, now: datetime) -> tuple[timedelta, timedelta]:
+    """(elapsed into today, span covered on `date_spec`) for the cutoff at `now`."""
+    from enphase_bridge_mcp.server import _equal_elapsed_cutoff
+
+    today_start, _ = pacific_day_bounds("today", now=now)
+    other_start, _ = pacific_day_bounds(date_spec, now=now)
+    cutoff = _equal_elapsed_cutoff(date_spec, now=now)
+    return now - today_start, cutoff - other_start
+
+
+def test_equal_elapsed_cutoff_is_duration_exact_on_ordinary_day() -> None:
+    """The ordinary case: both sides cover the same span, and it matches the wall clock."""
+    now = datetime(2026, 6, 15, 21, 0, tzinfo=UTC)  # 14:00 Pacific
+    today_elapsed, other_span = _elapsed_on_both_sides("2026-06-14", now)
+
+    assert today_elapsed == other_span == timedelta(hours=14)
+
+
+def test_equal_elapsed_cutoff_stays_exact_across_spring_forward() -> None:
+    """2026-03-08 loses an hour at 02:00 Pacific. Comparing that day against the
+    day before must still cover equal durations — a wall-clock cutoff would not,
+    and 02:30 Pacific does not exist on that date at all.
+    """
+    now = datetime(2026, 3, 8, 21, 0, tzinfo=UTC)  # 14:00 PDT, 13h elapsed (not 14)
+    today_elapsed, other_span = _elapsed_on_both_sides("2026-03-07", now)
+
+    assert today_elapsed == other_span, "spring-forward day must stay duration-exact"
+    assert today_elapsed == timedelta(hours=13), "23-hour day: 14:00 is 13h after midnight"
+
+
+def test_equal_elapsed_cutoff_stays_exact_across_fall_back() -> None:
+    """2026-11-01 repeats 01:00-02:00 Pacific, so 01:30 happens twice. At the SECOND
+    01:30, 150 minutes have elapsed today; a wall-clock cutoff would compare that
+    against only 90 minutes of the prior day and still call it fair. This is the
+    exact case that made the wall-clock approach wrong.
+    """
+    second_0130 = datetime(2026, 11, 1, 9, 30, tzinfo=UTC)  # 01:30 PST, the repeat
+    today_elapsed, other_span = _elapsed_on_both_sides("2026-10-31", second_0130)
+
+    assert today_elapsed == timedelta(minutes=150), "the repeated hour counts as elapsed"
+    assert other_span == today_elapsed, "fall-back must not silently compare 150m against 90m"
+
+
+def test_equal_elapsed_cutoff_clamps_to_the_target_day_end() -> None:
+    """A 25-hour fall-back "today" can elapse past the end of a 24-hour comparison
+    day; the cutoff must clamp rather than run into the following day.
+    """
+    late = datetime(2026, 11, 2, 7, 59, tzinfo=UTC)  # 23:59 PST on the 25-hour day
+    _, other_end = pacific_day_bounds("2026-10-31", now=late)
+    from enphase_bridge_mcp.server import _equal_elapsed_cutoff
+
+    assert _equal_elapsed_cutoff("2026-10-31", now=late) <= other_end
+
+
+@respx.mock
+async def test_compare_days_same_time_of_day_no_op_when_both_dates_are_today(
+    pinned_now: datetime,
+) -> None:
+    """Both sides already cover the same partial span, so there is nothing to
+    truncate — "today" vs. today's explicit date must equal the untruncated call.
+    """
+    today_windows = [
+        make_window(1781506800, 1000.0, 400.0, 0.0, 300.0),
+        make_window(1781507700, 1500.0, 600.0, 0.0, 500.0),
+    ]
+    mock_windows(today_windows)
+
+    result = await compare_days(date_a="today", date_b="2026-06-15", same_time_of_day=True)
+    baseline = await compare_days(date_a="today", date_b="2026-06-15", same_time_of_day=False)
+
+    assert result == baseline
+    assert result.day_a.produced_kwh == result.day_b.produced_kwh == 2.5

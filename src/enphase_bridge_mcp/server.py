@@ -133,37 +133,30 @@ def _is_today(date_spec: str, now: datetime) -> bool:
     return start_utc == today_start_utc
 
 
-def _same_wall_clock_cutoff(date_spec: str, now: datetime) -> datetime:
-    """UTC instant on `date_spec`'s Pacific day matching `now`'s Pacific wall-clock time.
+def _equal_elapsed_cutoff(date_spec: str, now: datetime) -> datetime:
+    """UTC instant on `date_spec`'s Pacific day, the same elapsed time into that
+    day as `now` is into today.
 
-    Used by `compare_days`' `same_time_of_day` option to truncate a complete
-    day to the same elapsed time-of-day as an in-progress "today" — e.g. at
-    14:00 Pacific, this returns 14:00 Pacific (as UTC) on `date_spec`'s date,
-    so both days cover 00:00-14:00.
+    Used by `compare_days`' `same_time_of_day` option to truncate a complete day
+    so it covers the same *duration* since Pacific midnight as an in-progress
+    "today" — e.g. 14h into today compares against the first 14h of `date_spec`.
 
-    DST: this matches wall-clock time-of-day (e.g. "14:00" both days), not
-    elapsed duration — a defensible, simple choice since the two days are
-    rarely on opposite sides of a DST transition and a spot-check ("how's my
-    solar") doesn't need duration-exact fairness. It only misbehaves for a
-    `now` whose local time falls in the one-hour DST gap/overlap itself
-    (2-3 AM on the transition date), which `zoneinfo` resolves via PEP 495's
-    fold=0 default rather than raising — not worth special-casing for a
-    check that's virtually never run at 2 AM.
+    Equal duration is the point: the figures being compared are accumulated kWh,
+    so a comparison is only fair if both sides cover the same number of minutes.
+
+    DST is handled by construction rather than by special case. The cutoff is
+    computed as `other_midnight + (now - today_midnight)` in UTC, so it never
+    builds a local wall-clock time and can never land in a spring-forward gap or
+    a fall-back repeated hour. On the 363 ordinary days a year this is identical
+    to matching the wall clock; on a transition day it stays duration-exact,
+    which is what the kWh comparison actually needs. The result is clamped to
+    the target day's end, since a 25-hour fall-back "today" can otherwise elapse
+    past the end of a 24-hour comparison day.
     """
-    other_start_utc, _ = pacific_day_bounds(date_spec, now=now)
-    other_date = other_start_utc.astimezone(PACIFIC).date()
-    now_pacific = now.astimezone(PACIFIC)
-    cutoff_pacific = datetime(
-        other_date.year,
-        other_date.month,
-        other_date.day,
-        now_pacific.hour,
-        now_pacific.minute,
-        now_pacific.second,
-        now_pacific.microsecond,
-        tzinfo=PACIFIC,
-    )
-    return cutoff_pacific.astimezone(UTC)
+    other_start_utc, other_end_utc = pacific_day_bounds(date_spec, now=now)
+    today_start_utc, _ = pacific_day_bounds("today", now=now)
+    elapsed = now - today_start_utc
+    return min(other_start_utc + elapsed, other_end_utc)
 
 
 def _pct_diff(a: float, b: float) -> float:
@@ -331,13 +324,19 @@ async def compare_days(
 
     `same_time_of_day`: when True and exactly one of the two days is today
     (still in progress), the OTHER (complete) day's window is truncated to
-    the same wall-clock time-of-day since its own Pacific midnight, so both
-    sides cover an equal span — e.g. at 14:00 Pacific, today-vs-yesterday
-    then compares 00:00-14:00 on both days, making the percent deltas a fair
-    like-for-like comparison instead of partial-day-vs-full-day. If neither
-    day is today (both are already complete), `same_time_of_day` is a no-op:
-    both summaries cover their full 24-hour Pacific window as usual, since
-    there is no partial day to match.
+    the same elapsed duration since its own Pacific midnight, so both sides
+    cover an equal span — e.g. 14h into today, today-vs-yesterday compares
+    the first 14h of each day, making the percent deltas a fair like-for-like
+    comparison instead of partial-day-vs-full-day. Equal *duration* is the
+    guarantee (both windows cover the same number of minutes), which on the
+    two annual DST transition days differs slightly from matching the wall
+    clock; duration is what a cumulative-kWh comparison requires.
+
+    `same_time_of_day` is a no-op whenever there is no partial day to match:
+    when neither date is today, and also when BOTH resolve to today (e.g.
+    "today" vs. an explicit date that is today's). In those cases each
+    summary covers its usual window and the result is identical to
+    `same_time_of_day=False`.
     """
     client = _build_client()
     now = _now()
@@ -348,9 +347,9 @@ async def compare_days(
             a_is_today = _is_today(date_a, now)
             b_is_today = _is_today(date_b, now)
             if a_is_today and not b_is_today:
-                end_override_b = _same_wall_clock_cutoff(date_b, now)
+                end_override_b = _equal_elapsed_cutoff(date_b, now)
             elif b_is_today and not a_is_today:
-                end_override_a = _same_wall_clock_cutoff(date_a, now)
+                end_override_a = _equal_elapsed_cutoff(date_a, now)
         day_a = await _build_daily_summary(client, date_a, now, end_override=end_override_a)
         day_b = await _build_daily_summary(client, date_b, now, end_override=end_override_b)
     except ValueError as exc:
