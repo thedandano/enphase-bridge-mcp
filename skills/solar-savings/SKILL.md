@@ -19,6 +19,10 @@ Money answers come from `get_trueup_estimate` — never invent tariffs, projecti
 - Nonzero `excluded_window_count` means some data was left out of the estimate — surface it as a caveat.
 - Savings advice: identify the largest **import cost** bucket in the breakdown and suggest shifting that load toward the cheapest period. Advice must be derived from the returned numbers, not general energy folklore.
 
+## When the tools error
+
+If `get_trueup_estimate` errors for any reason other than the "no TOU schedule" bootstrap case (bridge unreachable, no data for the range), do NOT render the money template and do NOT surface the raw error. Say: "I can't reach your solar cost data right now, so I can't estimate the bill. This is a data-connection issue — your solar system and your actual bill are unaffected." Never guess at dollar amounts to fill the gap.
+
 ## Output format
 
 ALWAYS use this exact template (drop bracketed parts when not applicable):

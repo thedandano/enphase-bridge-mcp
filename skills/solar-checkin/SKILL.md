@@ -22,6 +22,10 @@ Answer with real numbers from the enphase MCP tools — never estimate or invent
 - `today_data_completeness_pct` below 100 means today's totals are built from partial data (collector gap) — caveat the totals in one line.
 - These caveats exist because presenting stale or partial data as live is worse than no answer.
 
+## When the tools error
+
+If a tool errors (bridge unreachable, no data, no recent power samples), do NOT render the numeric template and do NOT surface the raw error. Say: "I can't read your home's solar data right now, so I can't tell whether the system is producing normally. This is a data-connection issue, not proof that anything is wrong with the panels. Try again once the bridge is back online." A data outage must never read as a solar-system failure.
+
 ## Output format
 
 ALWAYS use this exact template (drop the bracketed parts when not applicable):
