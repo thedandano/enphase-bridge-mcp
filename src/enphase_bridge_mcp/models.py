@@ -42,10 +42,11 @@ class CurrentStatus(ApiModel):
     large residual means at least one channel is misreporting upstream —
     see `is_power_data_consistent`."""
     is_power_data_consistent: bool
-    """False when the instantaneous channels contradict each other
-    (|power_balance_w| exceeds tolerance). The live watts above are then
-    physically impossible together (e.g. negative consumption while
-    producing) and should not be presented as trustworthy; today's kWh
+    """False when the instantaneous channels can't be trusted: either they
+    contradict each other (|power_balance_w| exceeds tolerance) or
+    consumption reads negative beyond a small noise floor — a home can't
+    consume negative power even when the channels happen to balance. The
+    live watts above should then not be presented as fact; today's kWh
     running totals come from a different pipeline and are unaffected."""
     is_online: bool
     """True if the bridge has recorded a completed window within the last ~20 minutes."""

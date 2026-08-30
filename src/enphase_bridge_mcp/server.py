@@ -118,8 +118,19 @@ def _pct_diff(a: float, b: float) -> float:
     return round((a - b) / abs(b) * 100, 2)
 
 
-# ponytail: fixed threshold; make configurable if real CT noise ever exceeds it
+# ponytail: fixed thresholds; make configurable if real CT noise ever exceeds them
 _POWER_BALANCE_TOLERANCE_W = 500.0
+_NEGATIVE_CONSUMPTION_NOISE_FLOOR_W = -25.0
+"""A home can't consume negative power, but a CT can read a few watts below
+zero at near-idle. Beyond this floor, negative consumption is a sensor fault
+even when the three channels happen to balance within tolerance."""
+
+
+def _is_power_consistent(consumption_w: float, power_balance_w: float) -> bool:
+    return (
+        abs(power_balance_w) <= _POWER_BALANCE_TOLERANCE_W
+        and consumption_w >= _NEGATIVE_CONSUMPTION_NOISE_FLOOR_W
+    )
 
 
 def _power_balance_w(production_w: float, consumption_w: float, grid_w: float) -> float:
@@ -221,7 +232,7 @@ async def get_current_status() -> CurrentStatus:
         consumption_w=consumption_w,
         grid_w=grid_w,
         power_balance_w=power_balance_w,
-        is_power_data_consistent=abs(power_balance_w) <= _POWER_BALANCE_TOLERANCE_W,
+        is_power_data_consistent=_is_power_consistent(consumption_w, power_balance_w),
         is_online=_is_bridge_online(window_start, now),
         last_data_at=epoch_to_pacific_iso(window_start),
         today_produced_kwh=today_produced_kwh,

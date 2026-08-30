@@ -237,6 +237,27 @@ async def test_get_current_status_flags_contradictory_power_channels(
     assert result.consumption_w == -543.0
 
 
+def test_power_consistency_boundaries() -> None:
+    """The two independent triggers: balance residual beyond tolerance, and
+    negative consumption beyond the noise floor even when balanced."""
+    from enphase_bridge_mcp.server import _is_power_consistent, _power_balance_w
+
+    # Residual exactly at tolerance is still consistent; just past it is not.
+    assert _is_power_consistent(consumption_w=800.0, power_balance_w=500.0) is True
+    assert _is_power_consistent(consumption_w=800.0, power_balance_w=-500.0) is True
+    assert _is_power_consistent(consumption_w=800.0, power_balance_w=500.01) is False
+
+    # Negative consumption within balance tolerance must still be flagged:
+    # production 400, consumption -50, grid 0 balances to -450 (< 500 W)
+    # but a home can't consume -50 W.
+    residual = _power_balance_w(production_w=400.0, consumption_w=-50.0, grid_w=0.0)
+    assert abs(residual) <= 500.0
+    assert _is_power_consistent(consumption_w=-50.0, power_balance_w=residual) is False
+
+    # A few watts below zero is CT noise at idle, not a fault.
+    assert _is_power_consistent(consumption_w=-10.0, power_balance_w=0.0) is True
+
+
 @respx.mock
 async def test_get_current_status_is_online_at_worst_case_staleness(pinned_now: datetime) -> None:
     """A healthy bridge's `window_start` age cycles from 900s (just after write) up to
