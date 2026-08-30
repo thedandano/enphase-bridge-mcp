@@ -24,7 +24,7 @@ Never diagnose "low production" from current watts outside daylight hours — ze
 - **Inverter(s) need attention**: specific serials in `attention_needed` while the rest report fine.
 - **Low production**: all inverters online, output just low **during daylight and across recent full days** — offer weather/season as a possible (not confirmed) explanation before suggesting anything is broken.
 - **Unable to confirm live output**: `get_current_status` errors with "no power samples" while inverter health looks fine → say the live reading is unavailable right now, and judge from daily totals instead — don't guess at the live state. If inverter health is stale AND the live status errors with "no power samples" too, that's two degraded collector signals → classify as **data pipeline problem** instead.
-- **Any other tool error** (e.g. "no inverter array data yet", an HTTP failure, a malformed response): don't force one of the classes above. Say the diagnosis can't run right now because the solar *data* can't be read, that this is a data-access issue and not evidence of a panel fault, and to retry once the bridge is healthy. Never surface the raw error text.
+- **Any other tool error** (e.g. "no inverter array data yet", an HTTP failure, a malformed response): don't force one of the classes above. Say the diagnosis can't run right now because the solar *data* can't be read, that this is a data-access issue and not evidence of a panel fault, and to retry once the bridge is healthy. Never surface the raw error text. **This outcome skips the output template entirely** — that plain-language message is the whole answer (there is no data to fill the template with).
 
 ## Output format
 
