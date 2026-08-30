@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2](https://github.com/thedandano/enphase-bridge-mcp/compare/v1.1.1...v1.1.2) (2026-08-30)
+
+
+### Bug Fixes
+
+* close the v1.1.1 follow-ups (troubleshoot flag, pace comparison, schema test) ([#42](https://github.com/thedandano/enphase-bridge-mcp/issues/42)) ([9c1a25b](https://github.com/thedandano/enphase-bridge-mcp/commit/9c1a25bf7ebe19554c07f16e3b85ee773299a4d2))
+
 ## [1.1.1](https://github.com/thedandano/enphase-bridge-mcp/compare/v1.1.0...v1.1.1) (2026-08-30)
 
 
