@@ -1,31 +1,23 @@
 # enphase-bridge-mcp
 
-An MCP (Model Context Protocol) server that lets an AI assistant answer questions about your home
-solar system — current production, history, comparisons, inverter health, and true-up cost
-estimates — by wrapping the local [enphase-bridge](https://github.com/thedandano/enphase-bridge)
-Rust service.
+## What this does
 
-Fully **stateless** streamable-HTTP transport (MCP spec 2026-07-28): no sessions, no server-side
-state, every tool call self-contained.
+Ask your AI assistant about your home solar system in plain English, and get real answers from
+your own data:
 
-**8 tools:** `get_current_status`, `get_daily_summary`, `compare_days`, `get_period_summary`,
-`compare_periods`, `get_inverter_health`, `get_trueup_estimate`, `refresh_tou_schedule`.
+> **You:** how's my solar today?
+> **Assistant:** ☀️ Right now: 2,850 W producing · 1,900 W using · sending 950 W to the grid
+> 📊 Today so far: 15.7 kWh produced · 21.3 kWh used
 
-## Prerequisites
+This is an MCP (Model Context Protocol) server: it exposes your home solar data as **8 tools** any
+MCP client (Claude Code, Codex, etc.) can call — live status, daily summaries, day and period
+comparisons, inverter health, and true-up cost estimates:
 
-1. [enphase-bridge](https://github.com/thedandano/enphase-bridge) running (default `http://localhost:8080`).
-2. [uv](https://docs.astral.sh/uv/) installed.
-3. Start this server:
+`get_current_status` · `get_daily_summary` · `compare_days` · `get_period_summary` ·
+`compare_periods` · `get_inverter_health` · `get_trueup_estimate` · `refresh_tou_schedule`
 
-```sh
-uv run enphase-bridge-mcp                                  # bridge on this machine (localhost:8080)
-uv run enphase-bridge-mcp --ip 192.168.1.146 --port 8080   # bridge on another machine
-```
-
-Both flags are optional and point at the **bridge**; they override `ENPHASE_MCP_BRIDGE_URL`
-from the environment or `.env`. Serves streamable-HTTP MCP at `http://127.0.0.1:8000/mcp` by
-default. The server must be running for tool calls to succeed — installs below work either way;
-calls fail with a clear error until it's up.
+It also bundles four skills that route casual questions ("how's my solar?", "is something
+wrong?", "what's my true-up?") to the right tools — see [Bundled skills](#bundled-skills).
 
 ## Install — Claude Code
 
@@ -61,6 +53,25 @@ Manual alternative — add to `~/.codex/config.toml`:
 url = "http://127.0.0.1:8000/mcp"
 ```
 
+## Dependencies & running the server
+
+1. **[enphase-bridge](https://github.com/thedandano/enphase-bridge)** — the local Rust service
+   that collects data from your Enphase system. This server is a thin wrapper around it and
+   cannot answer anything without it (default `http://localhost:8080`).
+2. **[uv](https://docs.astral.sh/uv/)** — the Python package/run tool used to start the server.
+
+Start the server:
+
+```sh
+uv run enphase-bridge-mcp                                  # bridge on this machine (localhost:8080)
+uv run enphase-bridge-mcp --ip 192.168.1.146 --port 8080   # bridge on another machine
+```
+
+Both flags are optional and point at the **bridge**; they override `ENPHASE_MCP_BRIDGE_URL`
+from the environment or `.env`. Serves streamable-HTTP MCP at `http://127.0.0.1:8000/mcp` by
+default. The server must be running for tool calls to succeed — the installs above work either
+way; calls fail with a clear error until it's up.
+
 ## Try it
 
 - "How's my solar doing today vs yesterday?"
@@ -79,6 +90,9 @@ tools and format every answer the same way, every time:
 - **solar-troubleshoot** — "Is something wrong?" → ordered diagnosis: data pipeline vs offline inverters vs low production.
 
 ## Configuration
+
+Design note: the transport is fully **stateless** streamable-HTTP (MCP spec 2026-07-28) — no
+sessions, no server-side state, every tool call self-contained.
 
 Copy `.env.example` to `.env` and adjust as needed:
 
