@@ -31,7 +31,22 @@ Via the plugin marketplace (this repo is its own marketplace):
 CLI equivalents: `claude plugin marketplace add thedandano/enphase-bridge-mcp` and
 `claude plugin install enphase-bridge@enphase-plugins`.
 
-Manual alternative (no plugin, just the MCP server):
+Then tell it where your MCP server is, by adding an `env` block to
+`~/.claude/settings.json` (merge into the existing top-level object):
+
+```json
+{
+  "env": { "ENPHASE_MCP_URL": "http://127.0.0.1:8000/mcp" }
+}
+```
+
+Use `http://<your-mcp-host>/mcp` instead if you run the server on a homelab.
+Restart Claude Code afterwards. The plugin's bundled server reads this variable,
+so **there is nothing else to register** — see [Pointing the plugin at your
+server](#pointing-the-plugin-at-your-server).
+
+Manual alternative — **instead of** the plugin, not in addition to it (running
+both registers the same tools twice):
 
 ```sh
 claude mcp add --transport http enphase http://127.0.0.1:8000/mcp
@@ -152,27 +167,39 @@ hostname the proxy serves.
 | `ENPHASE_MCP_PORT` | `8000` | Port the MCP server binds |
 | `ENPHASE_MCP_ALLOWED_HOSTS` | empty | Comma-separated Host headers to accept (required when clients aren't loopback) |
 
-### Point your client at your server
+### Pointing the plugin at your server
 
-The bundled plugin connects to `http://127.0.0.1:8000/mcp` — a server on
-your own machine. (The URL is a literal on purpose: Codex does not expand
-`${VAR}` placeholders in MCP configs, so an env-var default would ship a
-server that can never connect there.)
+The plugin's server URL is **not hardcoded** — it reads `ENPHASE_MCP_URL`, so
+the same plugin works whether your server runs on your laptop or a homelab.
 
-Running the server in your homelab instead? Register the URL with your
-client directly — one command each, run once (swap in your own URL):
+**Claude Code** — set it once in `~/.claude/settings.json` and restart:
 
-```bash
-# Claude Code
-claude mcp add --transport http --scope user enphase-solar http://<mcp-host>/mcp
-
-# Codex
-codex mcp add enphase-solar --url http://<mcp-host>/mcp
+```json
+{
+  "env": { "ENPHASE_MCP_URL": "http://<mcp-host>/mcp" }
+}
 ```
 
-The plugin's bundled `127.0.0.1` server entry will simply show as not
-connected unless something is listening locally — that's expected and
-harmless; the `enphase-solar` entry you registered carries the tools.
+Use `http://127.0.0.1:8000/mcp` if the server runs on the same machine. Do
+**not** also run `claude mcp add` — the plugin already provides the server, and
+a second registration shows the same tools twice, one of them usually broken.
+
+There is deliberately no default. An unset variable makes Claude Code report a
+`Missing environment variables` error against the server, which is visible and
+actionable; a silent fallback to `127.0.0.1` would instead look connected while
+talking to the wrong machine, or fail with no explanation of why.
+
+**Codex** does not expand `${VAR}` in MCP configs, so set the URL literally in
+`~/.codex/config.toml`:
+
+```toml
+[mcp_servers.enphase]
+url = "http://<mcp-host>/mcp"
+```
+
+If you also installed the plugin in Codex, its bundled entry will show as
+failed there (Codex leaves the placeholder unexpanded) — the `config.toml`
+entry above is what carries the tools.
 
 ## Warning
 
