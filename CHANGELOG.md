@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.3](https://github.com/thedandano/enphase-bridge-mcp/compare/v1.1.2...v1.1.3) (2026-08-31)
+
+
+### Bug Fixes
+
+* make the plugin's MCP url configurable again ([#44](https://github.com/thedandano/enphase-bridge-mcp/issues/44)) ([b51b7ba](https://github.com/thedandano/enphase-bridge-mcp/commit/b51b7bae2113776053d8641aa0c9088c25cf3778))
+
 ## [1.1.2](https://github.com/thedandano/enphase-bridge-mcp/compare/v1.1.1...v1.1.2) (2026-08-30)
 
 
