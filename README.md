@@ -54,19 +54,30 @@ claude mcp add --transport http enphase http://127.0.0.1:8000/mcp
 
 ## Install — Codex
 
-Codex consumes the same marketplace format:
+**Codex does not expand `${VAR}` in MCP configs**, so it cannot use the
+plugin's bundled server entry. Register the server directly in
+`~/.codex/config.toml`:
+
+```toml
+[mcp_servers.enphase]
+url = "http://127.0.0.1:8000/mcp"
+```
+
+Swap in `http://<your-mcp-host>/mcp` if the server runs on a homelab.
+
+Codex does consume the same marketplace format, so you *can* install the
+plugin there for its skills:
 
 ```sh
 codex plugin marketplace add thedandano/enphase-bridge-mcp
 codex plugin add enphase-bridge@enphase-plugins
 ```
 
-Manual alternative — add to `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.enphase]
-url = "http://127.0.0.1:8000/mcp"
-```
+But be aware of the trade-off: Codex has no way to disable an individual
+plugin-provided server, so the plugin's bundled entry will sit there
+permanently failed alongside your working `config.toml` one. If a clean
+single-server list matters more to you than the bundled skills, register the
+server in `config.toml` and skip the plugin in Codex.
 
 ## Dependencies & running the server
 
@@ -189,17 +200,15 @@ There is deliberately no default. An unset variable makes Claude Code report a
 actionable; a silent fallback to `127.0.0.1` would instead look connected while
 talking to the wrong machine, or fail with no explanation of why.
 
-**Codex** does not expand `${VAR}` in MCP configs, so set the URL literally in
-`~/.codex/config.toml`:
+**Codex** cannot expand `${VAR}` in MCP configs at all, so the plugin's bundled
+entry is unusable there — set the URL literally in `~/.codex/config.toml`
+instead, and see [Install — Codex](#install--codex) for the trade-off if you
+also want the plugin's skills.
 
 ```toml
 [mcp_servers.enphase]
 url = "http://<mcp-host>/mcp"
 ```
-
-If you also installed the plugin in Codex, its bundled entry will show as
-failed there (Codex leaves the placeholder unexpanded) — the `config.toml`
-entry above is what carries the tools.
 
 ## Warning
 
